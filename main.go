@@ -163,49 +163,19 @@ func Stretch(items [][]string, width int) []string {
 	return rows
 }
 
-func main() {
+func Prompt(ctx context.Context, c *api.Client) error {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to open tty: %s\n", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("failed to open tty: %s\n", err.Error())
 	}
 	width, height, err := setup(tty)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to probe TTY size: %s\n", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("failed probing TTY size: %s\n", err.Error())
 	}
 
 	defer teardown(tty)
 
-	c, err := api.NewClient(&http.Client{}, "secret_jeremy-bobbin_0bc27d2b7199468da7504f2a56276ac0.hhMhe0v7b5PHWcIB4Qm4NLzHnnHp8Vsi")
-	if err != nil {
-		panic(err)
-	}
 
-	quotes, titles, err := c.Availability()
-	if err != nil {
-		panic(err)
-	}
-
-	sort.Slice(titles, func(i, j int) bool {
-		return titles[i].Less(titles[j])
-	})
-
-	columns := make([]string, 3)
-	items := make([][]string, len(titles))
-	for i, title := range titles {
-		q := quotes[title]
-		r := title.Region()
-		m := title.Model()
-		items[i] = make([]string, len(columns))
-		items[i][0] = m
-		items[i][1] = r.String()
-		items[i][2] = fmt.Sprintf("%5.2f", float32(q.PriceCentsPerHour))
-
-	}
-
-	var indices []int
-	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt)
 	stdin := make(chan []byte)
 	go func() {
 		defer close(stdin)
@@ -218,7 +188,6 @@ func main() {
 			}
 			n, err = tty.Read(buf[i:])
 			if err != nil {
-				//fmt.Println(err)
 				return
 			}
 			stdin <- buf[i : i+n]
@@ -250,18 +219,9 @@ func main() {
 		return cancel
 	}
 
-	ch := make(chan int)
-	cancel := menu(ch, items)
-	for n := range ch {
-		indices = append(indices, n)
-		for _, _ = range indices {
-			cancel()
-		}
-	}
-
 	keys, err, _ := c.SSHKeys()
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to get SSH keys: %s\n", err.Error())
 	}
 
 	for k, _ := range keys {
@@ -270,7 +230,7 @@ func main() {
 		}
 	}
 
-	items = make([][]string, 0, len(keys))
+	items := make([][]string, 0, len(keys))
 	local, _ := GetLocalPublicKeys()
 
 	for k, v := range keys {
@@ -296,9 +256,67 @@ func main() {
 		return items[i][0] < items[j][0]
 	})
 
-	ch = make(chan int)
-	cancel = menu(ch, items)
-	for _ = range ch {
+	ch := make(chan int)
+	cancel := menu(ch, items)
+	var key string
+	for i := range ch {
+		key = items[i][0]
 		cancel()
 	}
+
+	quotes, titles, err := c.Availability()
+	if err != nil {
+		return fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
+	}
+
+	sort.Slice(titles, func(i, j int) bool {
+		return titles[i].Less(titles[j])
+	})
+
+	columns := make([]string, 3)
+	items = make([][]string, len(titles))
+	for i, title := range titles {
+		q := quotes[title]
+		r := title.Region()
+		m := title.Model()
+		items[i] = make([]string, len(columns))
+		items[i][0] = m
+		items[i][1] = r.String()
+		items[i][2] = fmt.Sprintf("%5.2f", float32(q.PriceCentsPerHour)/100)
+
+	}
+
+	ch = make(chan int)
+	cancel = menu(ch, items)
+	var title api.Title
+	for i := range ch {
+		title = titles[i]
+		cancel()
+	}
+
+	ids, err := c.Launch(title, "", []string{key}, nil, "")
+	if err != nil {
+		return fmt.Errorf("failed launching instance: %s\n", err.Error())
+	}
+	fmt.Println("got", ids)
+
+	instances, err := c.Instances()
+	fmt.Println(instances, err)
+
+	return nil
+}
+
+func main() {
+	c, err := api.NewClient(&http.Client{}, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to make API Client: %s\n", err.Error())
+	}
+
+	ctx := context.Background()
+	ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
+	err = Prompt(ctx, c)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+	}
+	fmt.Println(err)
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"net/http"
 	"strings"
 	"time"
@@ -205,6 +206,11 @@ func ParseRegion(s string) (r Region, err error) {
 func (v *Region) UnmarshalJSON(buf []byte) (err error) {
 	*v, err = ParseRegion(string(bytes.Trim(buf, "\"")))
 	return
+}
+
+func (v Region) MarshalJSON() (buf []byte, err error) {
+	s := fmt.Sprintf("\"%s\"", v.String())
+	return []byte(s), nil
 }
 
 func (v *Region) String() string {
@@ -869,7 +875,8 @@ func (c *Client) Launch(title Title, name string, keys, filesystems []string, da
 	}
 
 	go func() {
-		enc := json.NewEncoder(w)
+		defer w.Close()
+		enc := json.NewEncoder(io.MultiWriter(w, os.Stderr))
 		err = enc.Encode(body)
 	}()
 
@@ -885,7 +892,9 @@ func (c *Client) Launch(title Title, name string, keys, filesystems []string, da
 	dec := json.NewDecoder(res.Body)
 
 	var response struct {
-		Data []string `json:"data"`
+		Data struct {
+			IDs []string `json:"instance_ids"`
+		} `json:"data"`
 	}
 
 	if err = dec.Decode(&response); err != nil {
@@ -893,8 +902,8 @@ func (c *Client) Launch(title Title, name string, keys, filesystems []string, da
 	}
 
 	ids := make(map[string]struct{})
-	fmt.Println("got", len(response.Data), "instance IDs from cloud")
-	for _, id := range response.Data {
+	fmt.Println("got", len(response.Data.IDs), "instance IDs from cloud")
+	for _, id := range response.Data.IDs {
 		ids[id] = struct{}{}
 	}
 
