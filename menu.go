@@ -76,7 +76,7 @@ func DrawLine(w io.Writer, t string, col Color, width int) {
 
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, rows chan string, lines, width, height int) {
+func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Writer, rows chan string, lines, width, height int) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var (
@@ -132,17 +132,29 @@ func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, 
 		switch string(key) {
 		case "\x1b\n", "\x1b\r":
 			// cursor to start of line, clear rest of line
+			var item string
+			if sel < 0 || sel >= len(items)-1 {
+				item = string(input)
+			} else {
+				item = items[sel]
+			}
 			select {
 			case <-ctx.Done():
-			case ch <- sel:
+			case ch <- item:
 			}
 			fmt.Fprintf(stderr, "\x1b[G\x1b[J")
 		case string(0x40 ^ 'D'), "\x1b":
 			cancel()
 		case "\r":
+			var item string
+			if sel < 0 || sel >= len(items)-1 {
+				item = string(input)
+			} else {
+				item = items[sel]
+			}
 			select {
 			case <-ctx.Done():
-			case ch <- sel:
+			case ch <- item:
 			}
 			cancel()
 		case string(0x40 ^ 'J'), string(0x40 ^ 'N'), "\x1bj", "\x1bn":

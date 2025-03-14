@@ -193,13 +193,12 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		}
 	}()
 
-	menu := func(out chan int, items [][]string) context.CancelFunc {
+	menu := func(out chan string, rows []string) context.CancelFunc {
 		ctx, cancel := context.WithCancel(ctx)
 		keys := make(chan []byte)
 		in := make(chan string)
 
 		go func() {
-			rows := Stretch(items, width)
 			defer close(in)
 			for _, row := range rows {
 				select {
@@ -267,12 +266,21 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		return items[i][0] < items[j][0]
 	})
 
-	ch := make(chan int)
-	cancel := menu(ch, items)
+	rows := Stretch(items, width)
+	selections := make(map[string]string)
+	for i, item := range items {
+		selections[rows[i]] = item[0]
+	}
+
+	ch := make(chan string)
+	cancel := menu(ch, rows)
+
 	var key string
-	for i := range ch {
-		key = items[i][0]
-		cancel()
+	for s := range ch {
+		var ok bool
+		if key, ok = selections[s]; ok {
+			cancel()
+		}
 	}
 
 	quotes, titles, err := c.Availability()
@@ -297,12 +305,20 @@ func Prompt(ctx context.Context, c *api.Client) error {
 
 	}
 
-	ch = make(chan int)
-	cancel = menu(ch, items)
+	ch = make(chan string)
+	rows = Stretch(items, width)
+	selections2 := make(map[string]api.Title)
+	for i, title := range titles {
+		selections2[rows[i]] = title
+	}
+
+	cancel = menu(ch, rows)
 	var title api.Title
-	for i := range ch {
-		title = titles[i]
-		cancel()
+	for s := range ch {
+		var ok bool
+		if title, ok = selections2[s]; ok {
+			cancel()
+		}
 	}
 
 	ids, err := c.Launch(title, "", []string{key}, nil, "")
