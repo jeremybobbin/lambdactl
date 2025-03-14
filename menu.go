@@ -41,9 +41,9 @@ func Width(str string) (n int) {
 	return
 }
 
-func DrawLine(w io.Writer, t string, col Color, width, max int) {
+func DrawLine(w io.Writer, t string, col Color, width int) {
 	padding := 2
-	buf := make([]rune, Min(width-padding, max+padding))
+	buf := make([]rune, width-padding)
 
 	text := []rune(t)
 
@@ -76,7 +76,7 @@ func DrawLine(w io.Writer, t string, col Color, width, max int) {
 
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, items []string, max, lines, width, height int) {
+func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, items []string, lines, width, height int) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var (
@@ -104,7 +104,7 @@ func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, 
 			}
 
 			if n < len(items) {
-				DrawLine(stderr, item, color, width, max)
+				DrawLine(stderr, item, color, width)
 			}
 		}
 

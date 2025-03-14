@@ -212,7 +212,7 @@ func Prompt(ctx context.Context, c *api.Client) error {
 
 		go func() {
 			rows := Stretch(items, width)
-			Menu(ctx, keys, ch, os.Stderr, rows, width, 10, width, height)
+			Menu(ctx, keys, ch, os.Stderr, rows, 10, width, height)
 			close(ch)
 		}()
 
