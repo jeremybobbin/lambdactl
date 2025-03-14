@@ -76,11 +76,12 @@ func DrawLine(w io.Writer, t string, col Color, width int) {
 
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, items []string, lines, width, height int) {
+func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, rows chan string, lines, width, height int) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var (
 		sel, offset int
+		items       []string
 	)
 
 	lines = Min(height, lines)
@@ -112,7 +113,18 @@ func Menu(ctx context.Context, keys chan []byte, ch chan int, Stderr io.Writer, 
 		fmt.Fprintf(stderr, "\x1b[%dF\x1b[%dG", Min(lines, len(items)), len(input)+1)
 
 		stderr.Flush()
-		key, ok := <-keys
+		var key []byte
+		var ok bool
+		select {
+		case item, ok := <-rows:
+			if ok {
+				items = append(items, item)
+			} else {
+				rows = nil
+			}
+			continue
+		case key, ok = <-keys:
+		}
 		if !ok {
 			break
 		}

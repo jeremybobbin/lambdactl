@@ -175,7 +175,6 @@ func Prompt(ctx context.Context, c *api.Client) error {
 
 	defer teardown(tty)
 
-
 	stdin := make(chan []byte)
 	go func() {
 		defer close(stdin)
@@ -194,9 +193,22 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		}
 	}()
 
-	menu := func(ch chan int, items [][]string) context.CancelFunc {
+	menu := func(out chan int, items [][]string) context.CancelFunc {
 		ctx, cancel := context.WithCancel(ctx)
 		keys := make(chan []byte)
+		in := make(chan string)
+
+		go func() {
+			rows := Stretch(items, width)
+			defer close(in)
+			for _, row := range rows {
+				select {
+				case <-ctx.Done():
+					return
+				case in <- row:
+				}
+			}
+		}()
 
 		go func() {
 			defer close(keys)
@@ -211,9 +223,8 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		}()
 
 		go func() {
-			rows := Stretch(items, width)
-			Menu(ctx, keys, ch, os.Stderr, rows, 10, width, height)
-			close(ch)
+			Menu(ctx, keys, out, os.Stderr, in, 10, width, height)
+			close(out)
 		}()
 
 		return cancel
