@@ -163,37 +163,10 @@ func Stretch(items [][]string, width int) []string {
 	return rows
 }
 
-func Prompt(ctx context.Context, c *api.Client) error {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open tty: %s\n", err.Error())
-	}
-	width, height, err := setup(tty)
-	if err != nil {
-		return fmt.Errorf("failed probing TTY size: %s\n", err.Error())
-	}
+type MenuFn func (out chan string, rows []string) context.CancelFunc
 
-	defer teardown(tty)
-
-	stdin := make(chan []byte)
-	go func() {
-		defer close(stdin)
-		var buf [4096]byte
-
-		var err error
-		for i, n := 0, 0; ; i += n {
-			if i > len(buf)/2 {
-				i = 0
-			}
-			n, err = tty.Read(buf[i:])
-			if err != nil {
-				return
-			}
-			stdin <- buf[i : i+n]
-		}
-	}()
-
-	menu := func(out chan string, rows []string) context.CancelFunc {
+func MenuClosure(ctx context.Context, stdin chan []byte, width, height int) MenuFn {
+	return MenuFn(func (out chan string, rows []string) context.CancelFunc {
 		ctx, cancel := context.WithCancel(ctx)
 		keys := make(chan []byte)
 		in := make(chan string)
@@ -227,7 +200,41 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		}()
 
 		return cancel
+	})
+}
+
+
+func Prompt(ctx context.Context, c *api.Client) error {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open tty: %s\n", err.Error())
 	}
+	width, height, err := setup(tty)
+	if err != nil {
+		return fmt.Errorf("failed probing TTY size: %s\n", err.Error())
+	}
+
+	defer teardown(tty)
+
+	stdin := make(chan []byte)
+	go func() {
+		defer close(stdin)
+		var buf [4096]byte
+
+		var err error
+		for i, n := 0, 0; ; i += n {
+			if i > len(buf)/2 {
+				i = 0
+			}
+			n, err = tty.Read(buf[i:])
+			if err != nil {
+				return
+			}
+			stdin <- buf[i : i+n]
+		}
+	}()
+
+	menu := MenuClosure(ctx, stdin, width, height)
 
 	keys, err, _ := c.SSHKeys()
 	if err != nil {
