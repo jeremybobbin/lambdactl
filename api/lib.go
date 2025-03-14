@@ -156,50 +156,55 @@ const (
 	UsWest3
 )
 
-func (v *Region) UnmarshalJSON(buf []byte) error {
-	switch string(bytes.Trim(buf, "\"")) {
+func ParseRegion(s string) (r Region, err error) {
+	switch s {
 	case "asia-northeast-1":
-		*v = AsiaNortheast1
+		r = AsiaNortheast1
 	case "asia-northeast-2":
-		*v = AsiaNortheast2
+		r = AsiaNortheast2
 	case "asia-south-1":
-		*v = AsiaSouth1
+		r = AsiaSouth1
 	case "australia-east-1":
-		*v = AustraliaEast1
+		r = AustraliaEast1
 	case "europe-central-1":
-		*v = EuropeCentral1
+		r = EuropeCentral1
 	case "me-west-1":
-		*v = MeWest1
+		r = MeWest1
 	case "test-east-1":
-		*v = TestEast1
+		r = TestEast1
 	case "test-west-1":
-		*v = TestWest1
+		r = TestWest1
 	case "us-east-1":
-		*v = UsEast1
+		r = UsEast1
 	case "us-east-2":
-		*v = UsEast2
+		r = UsEast2
 	case "us-east-3":
-		*v = UsEast3
+		r = UsEast3
 	case "us-midwest-1":
-		*v = UsMidwest1
+		r = UsMidwest1
 	case "us-midwest-2":
-		*v = UsMidwest2
+		r = UsMidwest2
 	case "us-south-1":
-		*v = UsSouth1
+		r = UsSouth1
 	case "us-south-2":
-		*v = UsSouth2
+		r = UsSouth2
 	case "us-south-3":
-		*v = UsSouth3
+		r = UsSouth3
 	case "us-west-1":
-		*v = UsWest1
+		r = UsWest1
 	case "us-west-2":
-		*v = UsWest2
+		r = UsWest2
 	case "us-west-3":
-		*v = UsWest3
+		r = UsWest3
 	default:
-		return fmt.Errorf("failed to unmarshal json for Region: %s", string(buf))
+		err = fmt.Errorf("failed to parse region from '%s'",s)
 	}
-	return nil
+	return
+}
+
+func (v *Region) UnmarshalJSON(buf []byte) (err error) {
+	*v, err = ParseRegion(string(bytes.Trim(buf, "\"")))
+	return
 }
 
 func (v *Region) String() string {
@@ -503,7 +508,7 @@ type InstanceLaunchRequest struct {
 	// FileSystemNames The names of the filesystems you want to attach to the instance.
 	// Currently, you can attach only one filesystem during instance creation.
 	// By default, no filesystems are attached.
-	FileSystemNames *[]string `json:"file_system_names,omitempty"`
+	FileSystems []string `json:"file_system_names,omitempty"`
 
 	// Image The machine image you want to use. Defaults to the latest Lambda Stack image.
 	Image *Image `json:"image,omitempty"`
@@ -513,7 +518,7 @@ type InstanceLaunchRequest struct {
 	Model string `json:"instance_type_name"`
 
 	// Name The name you want to assign to your instance. Must be 64 characters or fewer.
-	Name   *string `json:"name,omitempty"`
+	Name   string `json:"name,omitempty"`
 	Region Region  `json:"region_name"`
 
 	// SSHKeyNames The names of the SSH keys you want to use to provide access to the instance.
@@ -524,7 +529,7 @@ type InstanceLaunchRequest struct {
 	// [cloud-init user-data](https://cloudinit.readthedocs.io/en/latest/explanation/format.html)
 	// format. You can use this field to configure your instance on launch. The
 	// user data string must be plain text and cannot exceed 1MB in size.
-	Data *string `json:"user_data,omitempty"`
+	Data string `json:"user_data,omitempty"`
 }
 
 // InstanceActionAvailability defines model for InstanceActionAvailability.
@@ -690,28 +695,35 @@ func (c *Client) Instances() (*Client, error) {
 	return c, nil
 }
 
-func ToTitle(model, region string) string {
-	s := fmt.Sprintf("%s/%s", model, region)
-	return s
+type Title struct {
+	region Region
+	model string
 }
 
-func TitleModel(s string) string {
-	if i := strings.Index(s, "/"); i == -1 {
-		return ""
-	} else {
-		return s[i+1:]
+func NewTitle(region Region, model string) Title {
+	return Title{
+		region,
+		model,
 	}
 }
 
-func TitleRegion(s string) string {
-	if i := strings.Index(s, "/"); i == -1 {
-		return ""
-	} else {
-		return s[:i]
+
+func (t1 Title) Less(t2 Title) bool {
+	if t1.region != t2.region {
+		return t1.region.String() < t2.region.String()
 	}
+	return t1.model < t2.model
 }
 
-func (c *Client) Availability() (quotes map[string]InstanceQuote, titles []string, err error) {
+func (t Title) Model() string {
+	return t.model
+}
+
+func (t Title) Region() Region {
+	return t.region
+}
+
+func (c *Client) Availability() (quotes map[Title]InstanceQuote, titles []Title, err error) {
 	var req *http.Request
 	req, err = c.NewJSONRequest(context.Background(), "GET", "instance-types", nil)
 	if err != nil {
@@ -739,11 +751,11 @@ func (c *Client) Availability() (quotes map[string]InstanceQuote, titles []strin
 		return
 	}
 
-	quotes = make(map[string]InstanceQuote)
+	quotes = make(map[Title]InstanceQuote)
 	for _, e := range response.Data {
 		quote := e.InstanceQuote
 		for _, r := range e.Regions {
-			title := ToTitle(r.Name.String(), quote.Name)
+			title := NewTitle(r.Name, quote.Name)
 			titles = append(titles, title)
 			quotes[title] = quote
 		}
@@ -842,7 +854,7 @@ func (c *Client) SSHKeys() (keys map[string][]string, fetch, parse error) {
 	return
 }
 
-func (c *Client) Launch(quote *InstanceQuote, name string, keys, filesystems []string, data string) (map[string]struct{}, error) {
+func (c *Client) Launch(title Title, name string, keys, filesystems []string, data string) (map[string]struct{}, error) {
 	r, w := io.Pipe()
 	req, err := c.NewJSONRequest(context.Background(), "POST", "instance-operations/launch", r)
 	if err != nil {
@@ -851,14 +863,9 @@ func (c *Client) Launch(quote *InstanceQuote, name string, keys, filesystems []s
 
 	body := InstanceLaunchRequest{
 		SSHKeyNames: keys,
-	}
-
-	if len(filesystems) > 0 {
-		body.FileSystemNames = &filesystems
-	}
-
-	if len(name) > 0 {
-		body.Name = &name
+		Model: title.Model(),
+		Region: title.Region(),
+		FileSystems: filesystems,
 	}
 
 	go func() {

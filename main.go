@@ -186,24 +186,20 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sort.Strings(([]string)(titles))
 
-	var names []string
-
-	for name, _ := range quotes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	sort.Slice(titles, func(i, j int) bool {
+		return titles[i].Less(titles[j])
+	})
 
 	columns := make([]string, 3)
 	items := make([][]string, len(titles))
 	for i, title := range titles {
 		q := quotes[title]
-		r := api.TitleRegion(title)
-		m := api.TitleModel(title)
+		r := title.Region()
+		m := title.Model()
 		items[i] = make([]string, len(columns))
 		items[i][0] = m
-		items[i][1] = r
+		items[i][1] = r.String()
 		items[i][2] = fmt.Sprintf("%5.2f", float32(q.PriceCentsPerHour))
 
 	}
