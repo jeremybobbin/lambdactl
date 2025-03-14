@@ -130,12 +130,12 @@ func (v *InstanceStatus) String() string {
 	}
 }
 
-// PublicRegionCode defines model for PublicRegionCode.
-type PublicRegionCode int
+// Region defines model for PublicRegionCode.
+type Region int
 
-// Defines values for PublicRegionCode.
+// Defines values for Region.
 const (
-	AsiaNortheast1 PublicRegionCode = iota
+	AsiaNortheast1 Region = iota
 	AsiaNortheast2
 	AsiaSouth1
 	AustraliaEast1
@@ -156,7 +156,7 @@ const (
 	UsWest3
 )
 
-func (v *PublicRegionCode) UnmarshalJSON(buf []byte) error {
+func (v *Region) UnmarshalJSON(buf []byte) error {
 	switch string(bytes.Trim(buf, "\"")) {
 	case "asia-northeast-1":
 		*v = AsiaNortheast1
@@ -197,12 +197,12 @@ func (v *PublicRegionCode) UnmarshalJSON(buf []byte) error {
 	case "us-west-3":
 		*v = UsWest3
 	default:
-		return fmt.Errorf("failed to unmarshal json for PublicRegionCode: %s", string(buf))
+		return fmt.Errorf("failed to unmarshal json for Region: %s", string(buf))
 	}
 	return nil
 }
 
-func (v *PublicRegionCode) String() string {
+func (v *Region) String() string {
 	switch *v {
 	case AsiaNortheast1:
 		return "asia-northeast-1"
@@ -365,15 +365,15 @@ type Filesystem struct {
 	MountPoint string `json:"mount_point"`
 
 	// Name The name of the filesystem.
-	Name   string `json:"name"`
-	Region Region `json:"region"`
+	Name   string            `json:"name"`
+	Region RegionDescription `json:"region"`
 }
 
 // FilesystemCreateRequest defines model for FilesystemCreateRequest.
 type FilesystemCreateRequest struct {
 	// Name The name of the filesystem.
-	Name   string           `json:"name"`
-	Region PublicRegionCode `json:"region"`
+	Name   string `json:"name"`
+	Region Region `json:"region"`
 }
 
 // FilesystemDeleteResponse defines model for FilesystemDeleteResponse.
@@ -440,8 +440,8 @@ type Image struct {
 	ID string `json:"id"`
 
 	// Name The human-readable identifier for an image.
-	Name   string `json:"name"`
-	Region Region `json:"region"`
+	Name   string            `json:"name"`
+	Region RegionDescription `json:"region"`
 
 	// UpdatedTime The date and time that the image was last updated.
 	UpdatedTime time.Time `json:"updated_time"`
@@ -488,8 +488,8 @@ type Instance struct {
 	Name *string `json:"name,omitempty"`
 
 	// PrivateIP The private IPv4 address of the instance.
-	PrivateIP *string `json:"private_ip,omitempty"`
-	Region    Region  `json:"region"`
+	PrivateIP *string           `json:"private_ip,omitempty"`
+	Region    RegionDescription `json:"region"`
 
 	// SSHKeyNames The names of the SSH keys that are allowed to access the instance.
 	SSHKeyNames []string `json:"ssh_key_names"`
@@ -513,8 +513,8 @@ type InstanceLaunchRequest struct {
 	Model string `json:"instance_type_name"`
 
 	// Name The name you want to assign to your instance. Must be 64 characters or fewer.
-	Name   *string          `json:"name,omitempty"`
-	Region PublicRegionCode `json:"region_name"`
+	Name   *string `json:"name,omitempty"`
+	Region Region  `json:"region_name"`
 
 	// SSHKeyNames The names of the SSH keys you want to use to provide access to the instance.
 	// Currently, exactly one SSH key must be specified.
@@ -584,14 +584,14 @@ type InstanceTypesItem struct {
 	InstanceQuote InstanceQuote `json:"instance_type"`
 
 	// Regions A list of the regions in which this instance type is available.
-	Regions []Region `json:"regions_with_capacity_available"`
+	Regions []RegionDescription `json:"regions_with_capacity_available"`
 }
 
 // Region defines model for Region.
-type Region struct {
+type RegionDescription struct {
 	// Description The location represented by the region code.
-	Description string           `json:"description"`
-	Name        PublicRegionCode `json:"name"`
+	Description string `json:"description"`
+	Name        Region `json:"name"`
 }
 
 // SSHKey Information about a stored SSH key, which can be used to access instances over
