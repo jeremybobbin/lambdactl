@@ -1,7 +1,6 @@
 package api
 
 import (
-	"unicode"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -11,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // ImageArchitecture defines model for ImageArchitecture.
@@ -34,7 +34,7 @@ func (v *ImageArchitecture) UnmarshalJSON(buf []byte) error {
 	return nil
 }
 
-func (v *ImageArchitecture) String() (string) {
+func (v *ImageArchitecture) String() string {
 	switch *v {
 
 	case Arm64:
@@ -70,7 +70,7 @@ func (v *InstanceActionUnavailableCode) UnmarshalJSON(buf []byte) error {
 	return nil
 }
 
-func (v *InstanceActionUnavailableCode) String() (string) {
+func (v *InstanceActionUnavailableCode) String() string {
 	switch *v {
 	case VmHasNotLaunched:
 		return "vm-has-not-launched"
@@ -112,7 +112,7 @@ func (v *InstanceStatus) UnmarshalJSON(buf []byte) error {
 	}
 	return nil
 }
-func (v *InstanceStatus) String() (string) {
+func (v *InstanceStatus) String() string {
 	switch *v {
 
 	case InstanceStatusActive:
@@ -157,7 +157,7 @@ const (
 )
 
 func (v *PublicRegionCode) UnmarshalJSON(buf []byte) error {
-	switch strings.Trim(string(buf), "\"") {
+	switch string(bytes.Trim(buf, "\"")) {
 	case "asia-northeast-1":
 		*v = AsiaNortheast1
 	case "asia-northeast-2":
@@ -202,7 +202,7 @@ func (v *PublicRegionCode) UnmarshalJSON(buf []byte) error {
 	return nil
 }
 
-func (v *PublicRegionCode) String() (string) {
+func (v *PublicRegionCode) String() string {
 	switch *v {
 	case AsiaNortheast1:
 		return "asia-northeast-1"
@@ -273,7 +273,7 @@ func (v *SecurityGroupRuleProtocol) UnmarshalJSON(buf []byte) error {
 	}
 	return nil
 }
-func (v *SecurityGroupRuleProtocol) String() (string) {
+func (v *SecurityGroupRuleProtocol) String() string {
 	switch *v {
 
 	case All:
@@ -309,7 +309,7 @@ func (v *UserStatus) UnmarshalJSON(buf []byte) error {
 	}
 	return nil
 }
-func (v *UserStatus) String() (string) {
+func (v *UserStatus) String() string {
 	switch *v {
 
 	case UserStatusActive:
@@ -472,7 +472,7 @@ type Instance struct {
 	Hostname *string `json:"hostname,omitempty"`
 
 	// ID The unique identifier of the instance.
-	ID           string       `json:"id"`
+	ID            string        `json:"id"`
 	InstanceQuote InstanceQuote `json:"instance_type"`
 
 	// IP The public IPv4 address of the instance.
@@ -498,6 +498,35 @@ type Instance struct {
 	Status InstanceStatus `json:"status"`
 }
 
+// InstanceLaunchRequest defines model for InstanceLaunchRequest.
+type InstanceLaunchRequest struct {
+	// FileSystemNames The names of the filesystems you want to attach to the instance.
+	// Currently, you can attach only one filesystem during instance creation.
+	// By default, no filesystems are attached.
+	FileSystemNames *[]string `json:"file_system_names,omitempty"`
+
+	// Image The machine image you want to use. Defaults to the latest Lambda Stack image.
+	Image *Image `json:"image,omitempty"`
+
+	// InstanceTypeName The type of instance you want to launch. To retrieve a list of available instance types, see
+	// [List available instance types](#get-/api/v1/instance-types).
+	Model string `json:"instance_type_name"`
+
+	// Name The name you want to assign to your instance. Must be 64 characters or fewer.
+	Name   *string          `json:"name,omitempty"`
+	Region PublicRegionCode `json:"region_name"`
+
+	// SSHKeyNames The names of the SSH keys you want to use to provide access to the instance.
+	// Currently, exactly one SSH key must be specified.
+	SSHKeyNames []string `json:"ssh_key_names"`
+
+	// Data An instance configuration string specified in a valid
+	// [cloud-init user-data](https://cloudinit.readthedocs.io/en/latest/explanation/format.html)
+	// format. You can use this field to configure your instance on launch. The
+	// user data string must be plain text and cannot exceed 1MB in size.
+	Data *string `json:"user_data,omitempty"`
+}
+
 // InstanceActionAvailability defines model for InstanceActionAvailability.
 type InstanceActionAvailability struct {
 	ColdReboot InstanceActionAvailabilityDetails `json:"cold_reboot"`
@@ -517,35 +546,6 @@ type InstanceActionAvailabilityDetails struct {
 
 	// ReasonDescription A longer description of why this operation is currently blocked. Only provided if the operation is blocked.
 	ReasonDescription *string `json:"reason_description,omitempty"`
-}
-
-// InstanceLaunchRequest defines model for InstanceLaunchRequest.
-type InstanceLaunchRequest struct {
-	// FileSystemNames The names of the filesystems you want to attach to the instance.
-	// Currently, you can attach only one filesystem during instance creation.
-	// By default, no filesystems are attached.
-	FileSystemNames *[]string `json:"file_system_names,omitempty"`
-
-	// Image The machine image you want to use. Defaults to the latest Lambda Stack image.
-	Image *Image `json:"image,omitempty"`
-
-	// InstanceTypeName The type of instance you want to launch. To retrieve a list of available instance types, see
-	// [List available instance types](#get-/api/v1/instance-types).
-	InstanceTypeName string `json:"instance_type_name"`
-
-	// Name The name you want to assign to your instance. Must be 64 characters or fewer.
-	Name       *string          `json:"name,omitempty"`
-	Region PublicRegionCode `json:"region_name"`
-
-	// SSHKeyNames The names of the SSH keys you want to use to provide access to the instance.
-	// Currently, exactly one SSH key must be specified.
-	SSHKeyNames []string `json:"ssh_key_names"`
-
-	// Data An instance configuration string specified in a valid
-	// [cloud-init user-data](https://cloudinit.readthedocs.io/en/latest/explanation/format.html)
-	// format. You can use this field to configure your instance on launch. The
-	// user data string must be plain text and cannot exceed 1MB in size.
-	Data *string `json:"user_data,omitempty"`
 }
 
 type InstanceQuote struct {
@@ -724,7 +724,6 @@ func (c *Client) Availability() (quotes map[string]InstanceQuote, titles []strin
 		return
 	}
 
-	fmt.Println(res, err)
 	if int(res.StatusCode) < 200 || int(res.StatusCode) >= 300 {
 		err = fmt.Errorf("response not ok %d, %+v", res.StatusCode, res)
 		return
@@ -762,10 +761,10 @@ func ParseKey(key []byte) (string, error) {
 
 	unprintable := func(r rune) bool {
 		return !(unicode.IsDigit(r) ||
-			unicode.IsLetter(r)||
-			unicode.IsSymbol(r)||
-			unicode.IsMark(r)||
-			unicode.IsPunct(r)||
+			unicode.IsLetter(r) ||
+			unicode.IsSymbol(r) ||
+			unicode.IsMark(r) ||
+			unicode.IsPunct(r) ||
 			unicode.IsSpace(r))
 	}
 
@@ -780,9 +779,9 @@ func ParseKey(key []byte) (string, error) {
 	}
 
 	/*
-	if len(f) > 4 {
-		return "", fmt.Errorf("too many fields")
-	}
+		if len(f) > 4 {
+			return "", fmt.Errorf("too many fields")
+		}
 	*/
 	if len(f[1]) > 1000 {
 		return "", fmt.Errorf("hash string too long")
@@ -790,19 +789,28 @@ func ParseKey(key []byte) (string, error) {
 	return string(append(append(f[0], byte(' ')), f[1]...)), nil
 }
 
-func (c *Client) SSHKeys() (map[string][]string, error) {
+type Strings []string
+
+func (s Strings) Error() string {
+	return strings.Join(s, "\n")
+}
+
+func (c *Client) SSHKeys() (keys map[string][]string, fetch, parse error) {
 	req, err := c.NewJSONRequest(context.Background(), "GET", "ssh-keys", nil)
 	if err != nil {
-		return nil, err
+		fetch = err
+		return
 	}
 
 	res, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		fetch = err
+		return
 	}
 
 	if int(res.StatusCode) < 200 || int(res.StatusCode) >= 300 {
-		return nil, fmt.Errorf("response not ok %d, %+v", res.StatusCode, res)
+		fetch = fmt.Errorf("response not ok %d, %+v", res.StatusCode, res)
+		return
 	}
 
 	dec := json.NewDecoder(res.Body)
@@ -812,21 +820,26 @@ func (c *Client) SSHKeys() (map[string][]string, error) {
 	}
 
 	if err = dec.Decode(&response); err != nil {
-		return nil, err
+		fetch = err
+		return
 	}
 
-	keys := make(map[string][]string)
-	fmt.Println("got",  len(response.Data), "keys from cloud")
+	keys = make(map[string][]string)
+	var errs []string
 	for _, key := range response.Data {
 		k, err := ParseKey([]byte(key.PublicKey))
 		if err != nil {
-			fmt.Println("cloud key:", err)
+			errs = append(errs, fmt.Sprintf("error parsing cloud SSH key '%s': %+v", key.Name, err))
 			continue
 		}
 		keys[k] = append(keys[k], key.Name)
 	}
 
-	return keys, nil
+	if len(errs) != 0 {
+		parse = Strings(errs)
+	}
+
+	return
 }
 
 func (c *Client) Launch(quote *InstanceQuote, name string, keys, filesystems []string, data string) (map[string]struct{}, error) {
@@ -843,6 +856,11 @@ func (c *Client) Launch(quote *InstanceQuote, name string, keys, filesystems []s
 	if len(filesystems) > 0 {
 		body.FileSystemNames = &filesystems
 	}
+
+	if len(name) > 0 {
+		body.Name = &name
+	}
+
 	go func() {
 		enc := json.NewEncoder(w)
 		err = enc.Encode(body)
@@ -868,7 +886,7 @@ func (c *Client) Launch(quote *InstanceQuote, name string, keys, filesystems []s
 	}
 
 	ids := make(map[string]struct{})
-	fmt.Println("got",  len(response.Data), "instance IDs from cloud")
+	fmt.Println("got", len(response.Data), "instance IDs from cloud")
 	for _, id := range response.Data {
 		ids[id] = struct{}{}
 	}
