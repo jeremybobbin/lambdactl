@@ -127,49 +127,13 @@ func Intersection(m1, m2 map[string]string) (subset []string) {
 	return
 }
 
-func Stretch(items [][]string, width int) []string {
-	max := 0
-	for _, columns := range items {
-		max = Max(len(columns), max)
-	}
-
-	columns := make([]string, max)
-	widths := make([]int, len(columns))
-	for i := range items {
-		for j := range items[i] {
-			widths[j] = Max(widths[j], len(items[i][j]))
-		}
-	}
-
-	remaining := width
-	for _, w := range widths {
-		remaining -= w
-	}
-
-	rows := make([]string, len(items))
-	pad := remaining / (len(columns) - 1)
-	for i, columns := range items {
-		row := make([]string, len(columns))
-		for j, column := range columns {
-			if j == len(columns)-1 {
-				row[j] = fmt.Sprintf("%*s", widths[j], column)
-			} else {
-				row[j] = fmt.Sprintf("%-*s", pad, column)
-			}
-		}
-		rows[i] = strings.Join(row, "")
-	}
-
-	return rows
-}
-
-type MenuFn func (out chan string, rows []string) context.CancelFunc
+type MenuFn func (out chan string, rows []StringerFielder) context.CancelFunc
 
 func MenuClosure(ctx context.Context, stdin chan []byte, width, height int) MenuFn {
-	return MenuFn(func (out chan string, rows []string) context.CancelFunc {
+	return MenuFn(func (out chan string, rows []StringerFielder) context.CancelFunc {
 		ctx, cancel := context.WithCancel(ctx)
 		keys := make(chan []byte)
-		in := make(chan string)
+		in := make(chan StringerFielder)
 
 		go func() {
 			defer close(in)
@@ -203,10 +167,33 @@ func MenuClosure(ctx context.Context, stdin chan []byte, width, height int) Menu
 	})
 }
 
-func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (map[string]string, context.CancelFunc, error) {
+type SSHKey struct {
+	name string
+	path string
+}
+
+func (c SSHKey) String() string {
+	return c.name
+}
+
+func (c SSHKey) Fields() []string {
+	var fields = [2]string{
+		c.name,
+	}
+
+	if c.path == "" {
+		fields[1] = "-"
+	} else {
+		fields[1] = c.path
+	}
+	return fields[:]
+}
+
+
+func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (context.CancelFunc, error) {
 	keys, err, _ := c.SSHKeys()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get SSH keys: %s\n", err.Error())
+		return nil, fmt.Errorf("failed to get SSH keys: %s\n", err.Error())
 	}
 
 	for k, _ := range keys {
@@ -215,7 +202,8 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 		}
 	}
 
-	items := make([][]string, 0, len(keys))
+	items := make([]StringerFielder, 0, len(keys))
+	hasPath := make([]bool, 0, len(keys))
 	local, _ := GetLocalPublicKeys()
 
 	for k, v := range keys {
@@ -223,62 +211,62 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 			if len(name) > 15 {
 				continue
 			}
-			var path string
-			if v, ok := local[k]; ok {
-				path = v
-			} else {
-				path = "-"
+			path, ok := local[k]
+			item := SSHKey {
+				name: name,
+				path: path,
 			}
-			item := [2]string{name, path}
-			items = append(items, item[:])
+			hasPath = append(hasPath, ok)
+			items = append(items, item)
 		}
 	}
 
 	sort.Slice(items, func(i, j int) bool {
-		if items[i][1] == "-" && items[j][1] != "-" {
-			return false
+		if hasPath[i] != hasPath[j] {
+			return hasPath[j]
 		}
-		return items[i][0] < items[j][0]
+		return items[i].String() < items[j].String()
 	})
 
-	rows := Stretch(items, width)
-	selections := make(map[string]string)
-	for i, item := range items {
-		selections[rows[i]] = item[0]
-	}
-
-	return selections, menu(ch, rows), nil
+	return menu(ch, items), nil
 }
 
-func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (map[string]api.Title, context.CancelFunc, error) {
+type Quote struct {
+	title api.Title
+	price int
+}
+
+func (q Quote) String() string {
+	return q.title.String()
+}
+
+func (q Quote) Fields() []string {
+	return []string{
+		q.title.Model(),
+		q.title.Region().String(),
+		fmt.Sprintf("%5.2f", float32(q.price)/100),
+	}
+}
+
+func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (context.CancelFunc, error) {
 	quotes, titles, err := c.Availability()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
+		return nil, fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
 	}
 
 	sort.Slice(titles, func(i, j int) bool {
 		return titles[i].Less(titles[j])
 	})
 
-	columns := make([]string, 3)
-	items := make([][]string, len(titles))
+	items := make([]StringerFielder, len(titles))
 	for i, title := range titles {
-		q := quotes[title]
-		r := title.Region()
-		m := title.Model()
-		items[i] = make([]string, len(columns))
-		items[i][0] = m
-		items[i][1] = r.String()
-		items[i][2] = fmt.Sprintf("%5.2f", float32(q.PriceCentsPerHour)/100)
-
+		items[i] = Quote{
+			title,
+			quotes[title].PriceCentsPerHour,
+		}
 	}
 
-	rows := Stretch(items, width)
-	selections2 := make(map[string]api.Title)
-	for i, title := range titles {
-		selections2[rows[i]] = title
-	}
-	return selections2, menu(ch, rows), nil
+	return menu(ch, items), nil
 
 }
 
@@ -315,31 +303,30 @@ func Prompt(ctx context.Context, c *api.Client) error {
 	menu := MenuClosure(ctx, stdin, width, height)
 
 	keys := make(chan string)
-	selections, cancel, err := PromptCloudKeys(ctx, c, keys, menu, width)
+	cancel, err := PromptCloudKeys(ctx, c, keys, menu, width)
 	if err != nil {
 		return err
 	}
 
 	var key string
-	var ok bool
-	for s := range keys {
-		if key, ok = selections[s]; ok {
-			cancel()
-		}
+	for key = range keys {
+		cancel()
 	}
 
 	ch := make(chan string)
-	selections2, cancel, err := PromptInstanceQuote(ctx, c, ch, menu, width)
+	cancel, err = PromptInstanceQuote(ctx, c, ch, menu, width)
 	if err != nil {
 		return err
 	}
 
 	var title api.Title
 	for s := range ch {
-		var ok bool
-		if title, ok = selections2[s]; ok {
-			cancel()
+		var err error
+		title, err = api.ParseTitle(s)
+		if err != nil {
+			continue
 		}
+		cancel()
 	}
 
 	ids, err := c.Launch(title, "", []string{key}, nil, "")

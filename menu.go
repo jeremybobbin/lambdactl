@@ -7,9 +7,19 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Color int
+
+type Fielder interface {
+	Fields() []string
+}
+
+type StringerFielder interface {
+	Fielder
+	fmt.Stringer
+}
 
 const (
 	Normal Color = iota
@@ -76,12 +86,48 @@ func DrawLine(w io.Writer, t string, col Color, width int) {
 
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Writer, rows chan string, lines, width, height int) {
+func Stretch(items [][]string, width int) []string {
+	max := 0
+	for i := range items {
+		max = Max(len(items[i]), max)
+	}
+
+	columns := make([]string, max)
+	widths := make([]int, len(columns))
+	for i := range items {
+		for j := range items[i] {
+			widths[j] = Max(widths[j], len(items[i][j]))
+		}
+	}
+
+	remaining := width
+	for _, w := range widths {
+		remaining -= w
+	}
+
+	rows := make([]string, len(items))
+	pad := remaining / (len(columns) - 1)
+	for i, columns := range items {
+		row := make([]string, len(columns))
+		for j, column := range columns {
+			if j == len(columns)-1 {
+				row[j] = fmt.Sprintf("%*s", widths[j], column)
+			} else {
+				row[j] = fmt.Sprintf("%-*s", pad, column)
+			}
+		}
+		rows[i] = strings.Join(row, "")
+	}
+
+	return rows
+}
+
+func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Writer, rows chan StringerFielder, lines, width, height int) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var (
 		sel, offset int
-		items       []string
+		items       []StringerFielder
 	)
 
 	lines = Min(height, lines)
@@ -94,19 +140,21 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 	fmt.Fprintf(stderr, "\x1b[0m")
 
 	for {
-		for n := 0; n < lines; n++ {
-			var item string
-			var color Color
-			if n < len(items) {
-				item = items[offset:][n]
+		r := make([][]string, Min(lines, len(items)))
+		for i := range r {
+			if i + offset >= len(items) {
+				break
 			}
-			if n+offset == sel {
+			r[i] = items[i+offset].Fields()
+		}
+		strs := Stretch(r, width)
+
+		for i, s := range strs {
+			var color Color
+			if i+offset == sel {
 				color = Reverse
 			}
-
-			if n < len(items) {
-				DrawLine(stderr, item, color, width)
-			}
+			DrawLine(stderr, s, color, width)
 		}
 
 		// cursor up n-times, cursor to column n
@@ -136,7 +184,7 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			if sel < 0 || sel >= len(items)-1 {
 				item = string(input)
 			} else {
-				item = items[sel]
+				item = items[sel].String()
 			}
 			select {
 			case <-ctx.Done():
@@ -150,7 +198,7 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			if sel < 0 || sel >= len(items)-1 {
 				item = string(input)
 			} else {
-				item = items[sel]
+				item = items[sel].String()
 			}
 			select {
 			case <-ctx.Done():
