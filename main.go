@@ -250,6 +250,38 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 	return selections, menu(ch, rows), nil
 }
 
+func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (map[string]api.Title, context.CancelFunc, error) {
+	quotes, titles, err := c.Availability()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
+	}
+
+	sort.Slice(titles, func(i, j int) bool {
+		return titles[i].Less(titles[j])
+	})
+
+	columns := make([]string, 3)
+	items := make([][]string, len(titles))
+	for i, title := range titles {
+		q := quotes[title]
+		r := title.Region()
+		m := title.Model()
+		items[i] = make([]string, len(columns))
+		items[i][0] = m
+		items[i][1] = r.String()
+		items[i][2] = fmt.Sprintf("%5.2f", float32(q.PriceCentsPerHour)/100)
+
+	}
+
+	rows := Stretch(items, width)
+	selections2 := make(map[string]api.Title)
+	for i, title := range titles {
+		selections2[rows[i]] = title
+	}
+	return selections2, menu(ch, rows), nil
+
+}
+
 func Prompt(ctx context.Context, c *api.Client) error {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
@@ -296,36 +328,12 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		}
 	}
 
-	quotes, titles, err := c.Availability()
-	if err != nil {
-		return fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
-	}
-
-	sort.Slice(titles, func(i, j int) bool {
-		return titles[i].Less(titles[j])
-	})
-
-	columns := make([]string, 3)
-	items := make([][]string, len(titles))
-	for i, title := range titles {
-		q := quotes[title]
-		r := title.Region()
-		m := title.Model()
-		items[i] = make([]string, len(columns))
-		items[i][0] = m
-		items[i][1] = r.String()
-		items[i][2] = fmt.Sprintf("%5.2f", float32(q.PriceCentsPerHour)/100)
-
-	}
-
 	ch := make(chan string)
-	rows := Stretch(items, width)
-	selections2 := make(map[string]api.Title)
-	for i, title := range titles {
-		selections2[rows[i]] = title
+	selections2, cancel, err := PromptInstanceQuote(ctx, c, ch, menu, width)
+	if err != nil {
+		return err
 	}
 
-	cancel = menu(ch, rows)
 	var title api.Title
 	for s := range ch {
 		var ok bool
@@ -338,6 +346,7 @@ func Prompt(ctx context.Context, c *api.Client) error {
 	if err != nil {
 		return fmt.Errorf("failed launching instance: %s\n", err.Error())
 	}
+
 	fmt.Println("got", ids)
 
 	instances, err := c.Instances()
