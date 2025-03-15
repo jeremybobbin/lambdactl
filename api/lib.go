@@ -84,47 +84,47 @@ func (v *InstanceActionUnavailableCode) String() string {
 	}
 }
 
-// InstanceStatus The current status of the instance.
-type InstanceStatus int
+// Status - The current status of the instance.
+type Status int
 
-// Defines values for InstanceStatus.
+// Defines values for Status.
 const (
-	InstanceStatusActive InstanceStatus = iota
-	InstanceStatusBooting
-	InstanceStatusTerminated
-	InstanceStatusTerminating
-	InstanceStatusUnhealthy
+	StatusActive Status = iota
+	StatusBooting
+	StatusTerminated
+	StatusTerminating
+	StatusUnhealthy
 )
 
-func (v *InstanceStatus) UnmarshalJSON(buf []byte) error {
+func (v *Status) UnmarshalJSON(buf []byte) error {
 	switch strings.Trim(string(buf), "\"") {
 	case "active":
-		*v = InstanceStatusActive
+		*v = StatusActive
 	case "booting":
-		*v = InstanceStatusBooting
+		*v = StatusBooting
 	case "terminated":
-		*v = InstanceStatusTerminated
+		*v = StatusTerminated
 	case "terminating":
-		*v = InstanceStatusTerminating
+		*v = StatusTerminating
 	case "unhealthy":
-		*v = InstanceStatusUnhealthy
+		*v = StatusUnhealthy
 	default:
-		return fmt.Errorf("failed to unmarshal json for InstanceStatus: %s", string(buf))
+		return fmt.Errorf("failed to unmarshal json for Status: %s", string(buf))
 	}
 	return nil
 }
-func (v *InstanceStatus) String() string {
-	switch *v {
 
-	case InstanceStatusActive:
+func (v Status) String() string {
+	switch v {
+	case StatusActive:
 		return "active"
-	case InstanceStatusBooting:
+	case StatusBooting:
 		return "booting"
-	case InstanceStatusTerminated:
+	case StatusTerminated:
 		return "terminated"
-	case InstanceStatusTerminating:
+	case StatusTerminating:
 		return "terminating"
-	case InstanceStatusUnhealthy:
+	case StatusUnhealthy:
 		return "unhealthy"
 	default:
 		return ""
@@ -506,7 +506,7 @@ type Instance struct {
 	SSHKeyNames []string `json:"ssh_key_names"`
 
 	// Status The current status of the instance.
-	Status InstanceStatus `json:"status"`
+	Status Status `json:"status"`
 }
 
 // InstanceLaunchRequest defines model for InstanceLaunchRequest.
