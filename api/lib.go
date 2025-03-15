@@ -213,8 +213,8 @@ func (v Region) MarshalJSON() (buf []byte, err error) {
 	return []byte(s), nil
 }
 
-func (v *Region) String() string {
-	switch *v {
+func (v Region) String() string {
+	switch v {
 	case AsiaNortheast1:
 		return "asia-northeast-1"
 	case AsiaNortheast2:
@@ -713,6 +713,23 @@ func NewTitle(region Region, model string) Title {
 	}
 }
 
+func ParseTitle(s string) (t Title, err error) {
+	i := strings.Index(s, "/")
+	if i == -1 {
+		err = fmt.Errorf("'/' not found")
+		return
+	}
+	t.region, err = ParseRegion(s[:i])
+	if err != nil {
+		return
+	}
+	t.model = s[i+1:]
+	return
+}
+
+func (t Title) String() string {
+	return fmt.Sprintf("%s/%s", t.region.String(), t.model)
+}
 
 func (t1 Title) Less(t2 Title) bool {
 	if t1.region != t2.region {
