@@ -668,7 +668,7 @@ func (c *Client) NewJSONRequest(ctx context.Context, method string, path string,
 	return req, nil
 }
 
-func (c *Client) Instances() (*Client, error) {
+func (c *Client) Instances() ([]Instance, error) {
 	req, err := c.NewJSONRequest(context.Background(), "GET", "instances", nil)
 	if err != nil {
 		return nil, err
@@ -695,10 +695,7 @@ func (c *Client) Instances() (*Client, error) {
 
 	res.Body.Close()
 
-	for _, instance := range response.Data {
-		fmt.Printf("%+v\n", instance)
-	}
-	return c, nil
+	return response.Data, nil
 }
 
 type Title struct {
