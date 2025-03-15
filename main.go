@@ -203,42 +203,10 @@ func MenuClosure(ctx context.Context, stdin chan []byte, width, height int) Menu
 	})
 }
 
-
-func Prompt(ctx context.Context, c *api.Client) error {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open tty: %s\n", err.Error())
-	}
-	width, height, err := setup(tty)
-	if err != nil {
-		return fmt.Errorf("failed probing TTY size: %s\n", err.Error())
-	}
-
-	defer teardown(tty)
-
-	stdin := make(chan []byte)
-	go func() {
-		defer close(stdin)
-		var buf [4096]byte
-
-		var err error
-		for i, n := 0, 0; ; i += n {
-			if i > len(buf)/2 {
-				i = 0
-			}
-			n, err = tty.Read(buf[i:])
-			if err != nil {
-				return
-			}
-			stdin <- buf[i : i+n]
-		}
-	}()
-
-	menu := MenuClosure(ctx, stdin, width, height)
-
+func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (map[string]string, context.CancelFunc, error) {
 	keys, err, _ := c.SSHKeys()
 	if err != nil {
-		return fmt.Errorf("failed to get SSH keys: %s\n", err.Error())
+		return nil, nil, fmt.Errorf("failed to get SSH keys: %s\n", err.Error())
 	}
 
 	for k, _ := range keys {
@@ -279,12 +247,50 @@ func Prompt(ctx context.Context, c *api.Client) error {
 		selections[rows[i]] = item[0]
 	}
 
-	ch := make(chan string)
-	cancel := menu(ch, rows)
+	return selections, menu(ch, rows), nil
+}
+
+func Prompt(ctx context.Context, c *api.Client) error {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open tty: %s\n", err.Error())
+	}
+	width, height, err := setup(tty)
+	if err != nil {
+		return fmt.Errorf("failed probing TTY size: %s\n", err.Error())
+	}
+
+	defer teardown(tty)
+
+	stdin := make(chan []byte)
+	go func() {
+		defer close(stdin)
+		var buf [4096]byte
+
+		var err error
+		for i, n := 0, 0; ; i += n {
+			if i > len(buf)/2 {
+				i = 0
+			}
+			n, err = tty.Read(buf[i:])
+			if err != nil {
+				return
+			}
+			stdin <- buf[i : i+n]
+		}
+	}()
+
+	menu := MenuClosure(ctx, stdin, width, height)
+
+	keys := make(chan string)
+	selections, cancel, err := PromptCloudKeys(ctx, c, keys, menu, width)
+	if err != nil {
+		return err
+	}
 
 	var key string
-	for s := range ch {
-		var ok bool
+	var ok bool
+	for s := range keys {
 		if key, ok = selections[s]; ok {
 			cancel()
 		}
@@ -300,7 +306,7 @@ func Prompt(ctx context.Context, c *api.Client) error {
 	})
 
 	columns := make([]string, 3)
-	items = make([][]string, len(titles))
+	items := make([][]string, len(titles))
 	for i, title := range titles {
 		q := quotes[title]
 		r := title.Region()
@@ -312,8 +318,8 @@ func Prompt(ctx context.Context, c *api.Client) error {
 
 	}
 
-	ch = make(chan string)
-	rows = Stretch(items, width)
+	ch := make(chan string)
+	rows := Stretch(items, width)
 	selections2 := make(map[string]api.Title)
 	for i, title := range titles {
 		selections2[rows[i]] = title
