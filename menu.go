@@ -176,28 +176,24 @@ func Stretch(items [][]string, width int) []string {
 	return rows
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Writer, rows chan StringerFielder, lines, width, height int) {
-	ctx, cancel := context.WithCancel(ctx)
-
+func Menu(ctx context.Context, keys chan []byte, ch chan string, w io.Writer, rows chan StringerFielder, lines, width, height int) {
 	var (
 		sel, offset int
 		items       []StringerFielder
+		display     = bufio.NewWriter(w)
+		indicies    = make(map[string]int)
 	)
 
 	lines = Min(height, lines)
 
-	stderr := bufio.NewWriter(Stderr)
-	indicies := make(map[string]int)
-
 	var input []rune
 
 	// default colors
-	fmt.Fprintf(stderr, "\x1b[0m")
+	fmt.Fprintf(display, "\x1b[0m")
 
 	// cursor to column 1, clear everything after the cursor
-	defer fmt.Fprintf(os.Stderr, "\x1b[G\x1b[J")
-	defer stderr.Flush()
 
+loop:
 	for {
 		r := make([][]string, Min(lines, len(items)))
 		for i := range r {
@@ -213,13 +209,13 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			if i+offset == sel {
 				color = Reverse
 			}
-			DrawLine(stderr, s, color, width)
+			DrawLine(display, s, color, width)
 		}
 
 		// cursor up n-times, cursor to column n
-		fmt.Fprintf(stderr, "\x1b[%dF\x1b[%dG", Min(lines, len(items)), len(input)+1)
+		fmt.Fprintf(display, "\x1b[%dF\x1b[%dG", Min(lines, len(items)), len(input)+1)
 
-		stderr.Flush()
+		display.Flush()
 		var key []byte
 		var ok bool
 		select {
@@ -238,7 +234,7 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			continue
 		case key, ok = <-keys:
 			if !ok {
-				return
+				break loop
 			}
 		}
 
@@ -255,9 +251,9 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			case <-ctx.Done():
 			case ch <- item:
 			}
-			fmt.Fprintf(stderr, "\x1b[G\x1b[J")
+			fmt.Fprintf(display, "\x1b[G\x1b[J")
 		case string(0x40 ^ 'D'), "\x1b":
-			cancel()
+			break loop
 		case "\r":
 			var item string
 			if sel < 0 || sel >= len(items)-1 {
@@ -269,7 +265,7 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			case <-ctx.Done():
 			case ch <- item:
 			}
-			cancel()
+			break loop
 		case string(0x40 ^ 'J'), string(0x40 ^ 'N'), "\x1bj", "\x1bn":
 			sel++
 			sel = Min(sel, len(items)-1)
@@ -303,14 +299,17 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 			}
 			input = (input)[:len(input)-1]
 			// backspace, space, backspace
-			fmt.Fprintf(stderr, "\x08 \x08")
+			fmt.Fprintf(display, "\x08 \x08")
 		default:
 			for _, r := range string(key) {
 				if strconv.IsGraphic(r) {
-					stderr.Write([]byte(string(r)))
+					display.Write([]byte(string(r)))
 					input = append(input, r)
 				}
 			}
 		}
 	}
+
+	fmt.Fprintf(display, "\x1b[G\x1b[J")
+	display.Flush()
 }
