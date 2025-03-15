@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -14,76 +13,6 @@ import (
 	"sort"
 	"strings"
 )
-
-/*
-#include <termios.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <errno.h>
-
-static struct termios term[2];
-
-int setup(int fd, int *width, int *height) {
-	struct winsize ws;
-	int n;
-		if ((n = ioctl(fd, TIOCGWINSZ, &ws)) < 0) {
-			return errno;
-	}
-		*width = ws.ws_col;
-		*height = ws.ws_row;
-
-		tcgetattr(fd, &term[0]);
-		term[1] = term[0];
-		term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-		term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
-		term[1].c_cflag &= ~(CSIZE|PARENB);
-		term[1].c_cflag |= CS8;
-		term[1].c_cc[VMIN] = 1;
-		if (tcsetattr(fd, TCSANOW, &term[1]) < 0) {
-		return errno;
-	}
-}
-
-int teardown(int fd) {
-	return tcsetattr(fd, TCSANOW, &term[0]);
-}
-*/
-import "C"
-
-func setup(f *os.File) (int, int, error) {
-	var err error
-	var w, h C.int
-
-	r := C.setup(C.int(f.Fd()), &w, &h)
-	if r != 0 {
-		err = fmt.Errorf("CGO failed - return code %d", r)
-	}
-	return int(w), int(h), err
-}
-
-func teardown(f *os.File) error {
-	r := C.teardown(C.int(f.Fd()))
-	if r != 0 {
-		return fmt.Errorf("CGO failed - return code %d", r)
-	}
-	return nil
-}
-
-func ReadLines(r io.Reader) (lines []string, max int, err error) {
-	scanner := bufio.NewScanner(r)
-
-	for i := 0; scanner.Scan(); i++ {
-		line := scanner.Text()
-		if n := len(line); n > 0 && line[n-1] == '\n' {
-			line = line[:n-1]
-		}
-		max = Max(Width(line), max)
-		lines = append(lines, line)
-	}
-
-	err = scanner.Err()
-	return
-}
 
 // map[publickey]name
 func GetLocalPublicKeys() (m map[string]string, err error) {
@@ -115,36 +44,11 @@ func GetLocalPublicKeys() (m map[string]string, err error) {
 	return
 }
 
-// map[publickey]name
-func Intersection(m1, m2 map[string]string) (subset []string) {
-	/*
-		for k := range m2 {
-			if _, ok := m1; ok {
-				subset = append(subset, k)
-			}
-		}
-	*/
-	return
-}
+type MenuFn func(ctx context.Context, in chan StringerFielder, out chan string)
 
-type MenuFn func (out chan string, rows []StringerFielder) context.CancelFunc
-
-func MenuClosure(ctx context.Context, stdin chan []byte, width, height int) MenuFn {
-	return MenuFn(func (out chan string, rows []StringerFielder) context.CancelFunc {
-		ctx, cancel := context.WithCancel(ctx)
+func MenuClosure(w io.Writer, stdin chan []byte, width, height int) MenuFn {
+	return MenuFn(func(ctx context.Context, in chan StringerFielder, out chan string) {
 		keys := make(chan []byte)
-		in := make(chan StringerFielder)
-
-		go func() {
-			defer close(in)
-			for _, row := range rows {
-				select {
-				case <-ctx.Done():
-					return
-				case in <- row:
-				}
-			}
-		}()
 
 		go func() {
 			defer close(keys)
@@ -158,18 +62,14 @@ func MenuClosure(ctx context.Context, stdin chan []byte, width, height int) Menu
 			}
 		}()
 
-		go func() {
-			Menu(ctx, keys, out, os.Stderr, in, 10, width, height)
-			close(out)
-		}()
-
-		return cancel
+		defer close(out)
+		Menu(ctx, keys, out, w, in, 10, width, height)
 	})
 }
 
 type SSHKey struct {
 	name string
-	path string
+	path *string
 }
 
 func (c SSHKey) String() string {
@@ -181,16 +81,19 @@ func (c SSHKey) Fields() []string {
 		c.name,
 	}
 
-	if c.path == "" {
+	if c.path == nil {
 		fields[1] = "-"
 	} else {
-		fields[1] = c.path
+		fields[1] = *c.path
 	}
 	return fields[:]
 }
 
+func Xor(a, b bool) bool {
+	return (a && !b) || (!a && b)
+}
 
-func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (context.CancelFunc, error) {
+func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu MenuFn) (context.CancelFunc, error) {
 	keys, err, _ := c.SSHKeys()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get SSH keys: %s\n", err.Error())
@@ -202,8 +105,7 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 		}
 	}
 
-	items := make([]StringerFielder, 0, len(keys))
-	hasPath := make([]bool, 0, len(keys))
+	items := make([]SSHKey, 0, len(keys))
 	local, _ := GetLocalPublicKeys()
 
 	for k, v := range keys {
@@ -211,24 +113,39 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 			if len(name) > 15 {
 				continue
 			}
-			path, ok := local[k]
-			item := SSHKey {
+			item := SSHKey{
 				name: name,
-				path: path,
 			}
-			hasPath = append(hasPath, ok)
+			if path, ok := local[k]; ok {
+				item.path = &path
+			}
 			items = append(items, item)
 		}
 	}
 
 	sort.Slice(items, func(i, j int) bool {
-		if hasPath[i] != hasPath[j] {
-			return hasPath[j]
+		if Xor(items[i].path == nil, items[j].path == nil) {
+			return items[i].path != nil
 		}
 		return items[i].String() < items[j].String()
 	})
 
-	return menu(ch, items), nil
+	in := make(chan StringerFielder)
+	go func() {
+		defer close(in)
+		for _, item := range items {
+			select {
+			case in <- item:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	go menu(ctx, in, ch)
+	return cancel, nil
 }
 
 type Quote struct {
@@ -248,7 +165,7 @@ func (q Quote) Fields() []string {
 	}
 }
 
-func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, menu MenuFn, width int) (context.CancelFunc, error) {
+func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, menu MenuFn) (context.CancelFunc, error) {
 	quotes, titles, err := c.Availability()
 	if err != nil {
 		return nil, fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
@@ -258,7 +175,7 @@ func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, men
 		return titles[i].Less(titles[j])
 	})
 
-	items := make([]StringerFielder, len(titles))
+	items := make([]Quote, len(titles))
 	for i, title := range titles {
 		items[i] = Quote{
 			title,
@@ -266,44 +183,34 @@ func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, men
 		}
 	}
 
-	return menu(ch, items), nil
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].price != items[j].price {
+			return items[i].price < items[j].price
+		}
+		return items[i].title.Less(items[j].title)
+	})
 
-}
-
-func Prompt(ctx context.Context, c *api.Client) error {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open tty: %s\n", err.Error())
-	}
-	width, height, err := setup(tty)
-	if err != nil {
-		return fmt.Errorf("failed probing TTY size: %s\n", err.Error())
-	}
-
-	defer teardown(tty)
-
-	stdin := make(chan []byte)
+	in := make(chan StringerFielder)
 	go func() {
-		defer close(stdin)
-		var buf [4096]byte
-
-		var err error
-		for i, n := 0, 0; ; i += n {
-			if i > len(buf)/2 {
-				i = 0
-			}
-			n, err = tty.Read(buf[i:])
-			if err != nil {
+		defer close(in)
+		for _, item := range items {
+			select {
+			case in <- item:
+			case <-ctx.Done():
 				return
 			}
-			stdin <- buf[i : i+n]
 		}
 	}()
 
-	menu := MenuClosure(ctx, stdin, width, height)
+	ctx, cancel := context.WithCancel(ctx)
 
+	go menu(ctx, in, ch)
+	return cancel, nil
+}
+
+func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error {
 	keys := make(chan string)
-	cancel, err := PromptCloudKeys(ctx, c, keys, menu, width)
+	cancel, err := PromptCloudKeys(ctx, c, keys, menu)
 	if err != nil {
 		return err
 	}
@@ -314,7 +221,7 @@ func Prompt(ctx context.Context, c *api.Client) error {
 	}
 
 	ch := make(chan string)
-	cancel, err = PromptInstanceQuote(ctx, c, ch, menu, width)
+	cancel, err = PromptInstanceQuote(ctx, c, ch, menu)
 	if err != nil {
 		return err
 	}
@@ -343,6 +250,37 @@ func Prompt(ctx context.Context, c *api.Client) error {
 }
 
 func main() {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open tty: %s\n", err.Error())
+	}
+	width, height, err := setup(tty)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed probing TTY size: %s\n", err.Error())
+	}
+
+	defer teardown(tty)
+
+	stdin := make(chan []byte)
+	go func() {
+		defer close(stdin)
+		var buf [4096]byte
+
+		var err error
+		for i, n := 0, 0; ; i += n {
+			if i > len(buf)/2 {
+				i = 0
+			}
+			n, err = tty.Read(buf[i:])
+			if err != nil {
+				return
+			}
+			stdin <- buf[i : i+n]
+		}
+	}()
+
+	menu := MenuClosure(os.Stderr, stdin, width, height)
+
 	c, err := api.NewClient(&http.Client{}, "")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to make API Client: %s\n", err.Error())
@@ -350,7 +288,7 @@ func main() {
 
 	ctx := context.Background()
 	ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
-	err = Prompt(ctx, c)
+	err = PromptCreateInstance(ctx, c, menu)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 	}
