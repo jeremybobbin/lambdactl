@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -198,7 +198,7 @@ func ParseRegion(s string) (r Region, err error) {
 	case "us-west-3":
 		r = UsWest3
 	default:
-		err = fmt.Errorf("failed to parse region from '%s'",s)
+		err = fmt.Errorf("failed to parse region from '%s'", s)
 	}
 	return
 }
@@ -525,7 +525,7 @@ type InstanceLaunchRequest struct {
 
 	// Name The name you want to assign to your instance. Must be 64 characters or fewer.
 	Name   string `json:"name,omitempty"`
-	Region Region  `json:"region_name"`
+	Region Region `json:"region_name"`
 
 	// SSHKeyNames The names of the SSH keys you want to use to provide access to the instance.
 	// Currently, exactly one SSH key must be specified.
@@ -703,7 +703,7 @@ func (c *Client) Instances() (*Client, error) {
 
 type Title struct {
 	region Region
-	model string
+	model  string
 }
 
 func NewTitle(region Region, model string) Title {
@@ -886,8 +886,8 @@ func (c *Client) Launch(title Title, name string, keys, filesystems []string, da
 
 	body := InstanceLaunchRequest{
 		SSHKeyNames: keys,
-		Model: title.Model(),
-		Region: title.Region(),
+		Model:       title.Model(),
+		Region:      title.Region(),
 		FileSystems: filesystems,
 	}
 
