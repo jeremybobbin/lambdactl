@@ -130,7 +130,6 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 		return items[i].String() < items[j].String()
 	})
 
-
 	ctx, cancel := context.WithCancel(ctx)
 	in := make(chan StringerFielder)
 
@@ -201,6 +200,78 @@ func InstanceQuotes(ctx context.Context, c *api.Client, ch chan StringerFielder)
 	return nil
 }
 
+type Instance struct {
+	instance api.Instance
+}
+
+func (i *Instance) String() string {
+	return i.instance.ID
+}
+
+func (i *Instance) Fields() []string {
+	instance := i.instance
+	var name, ip, keys string
+	if p := instance.Name; p != nil {
+		name = *p
+	}
+	if p := instance.IP; p != nil {
+		ip = *p
+	}
+
+	if p := instance.SSHKeyNames; len(p) > 0 {
+		keys = strings.Join(p, ", ")
+	}
+
+	fields := []string{
+		name,
+		instance.InstanceQuote.Name,
+		instance.Region.Description,
+		ip,
+		keys,
+		fmt.Sprintf("%5.2f", float32(instance.InstanceQuote.PriceCentsPerHour)/100),
+	}
+
+	for i := range fields {
+		if fields[i] == "" {
+			fields[i] = "-"
+		}
+	}
+
+	return fields
+}
+
+func Instances(ctx context.Context, c *api.Client, ch chan StringerFielder) error {
+	instances, err := c.Instances()
+	if err != nil {
+		return err
+	}
+
+	items := make([]Instance, 0, len(instances))
+	for i := range instances {
+		items = append(items, Instance{
+			instances[i],
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		a, b := items[i].instance, items[j].instance
+		return a.ID < b.ID
+	})
+
+	go func() {
+		defer close(ch)
+		for i := range items {
+			select {
+			case ch <- &items[i]:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
 func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error {
 	quotes := make(chan StringerFielder)
 	var fetch error
@@ -258,6 +329,26 @@ func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error
 	return nil
 }
 
+func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) error {
+	instances := make(chan StringerFielder)
+
+	var fetch error
+	go func() {
+		fetch = Instances(ctx, c, instances)
+	}()
+
+	ch := make(chan string)
+
+	ctx, cancel := context.WithCancel(ctx)
+	go menu(ctx, instances, ch)
+	for ins := range ch {
+		fmt.Println(ins)
+		cancel()
+	}
+
+	return fetch
+}
+
 func main() {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
@@ -297,9 +388,14 @@ func main() {
 
 	ctx := context.Background()
 	ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
+
 	err = PromptCreateInstance(ctx, c, menu)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 	}
-	fmt.Println(err)
+
+	err = PromptInstances(ctx, c, menu)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed at instance prompt: %s\n", err.Error())
+	}
 }
