@@ -133,6 +133,7 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 	lines = Min(height, lines)
 
 	stderr := bufio.NewWriter(Stderr)
+	indicies := make(map[string]int)
 
 	var input []rune
 
@@ -165,10 +166,16 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, Stderr io.Write
 		var ok bool
 		select {
 		case item, ok := <-rows:
-			if ok {
-				items = append(items, item)
-			} else {
+			if !ok {
 				rows = nil
+				continue
+			}
+			id := item.String()
+			if i, ok := indicies[item.String()]; ok {
+				items[i] = item
+			} else {
+				indicies[id] = len(items)
+				items = append(items, item)
 			}
 			continue
 		case key, ok = <-keys:
