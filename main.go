@@ -130,7 +130,10 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 		return items[i].String() < items[j].String()
 	})
 
+
+	ctx, cancel := context.WithCancel(ctx)
 	in := make(chan StringerFielder)
+
 	go func() {
 		defer close(in)
 		for _, item := range items {
@@ -141,8 +144,6 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 			}
 		}
 	}()
-
-	ctx, cancel := context.WithCancel(ctx)
 
 	go menu(ctx, in, ch)
 	return cancel, nil
@@ -165,22 +166,18 @@ func (q Quote) Fields() []string {
 	}
 }
 
-func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, menu MenuFn) (context.CancelFunc, error) {
-	quotes, titles, err := c.Availability()
+func InstanceQuotes(ctx context.Context, c *api.Client, ch chan StringerFielder) error {
+	quotes, _, err := c.Availability()
 	if err != nil {
-		return nil, fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
+		return fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
 	}
 
-	sort.Slice(titles, func(i, j int) bool {
-		return titles[i].Less(titles[j])
-	})
-
-	items := make([]Quote, len(titles))
-	for i, title := range titles {
-		items[i] = Quote{
+	items := make([]Quote, 0, len(quotes))
+	for title, quote := range quotes {
+		items = append(items, Quote{
 			title,
-			quotes[title].PriceCentsPerHour,
-		}
+			quote.PriceCentsPerHour,
+		})
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -190,25 +187,29 @@ func PromptInstanceQuote(ctx context.Context, c *api.Client, ch chan string, men
 		return items[i].title.Less(items[j].title)
 	})
 
-	in := make(chan StringerFielder)
 	go func() {
-		defer close(in)
+		defer close(ch)
 		for _, item := range items {
 			select {
-			case in <- item:
+			case ch <- item:
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
-	ctx, cancel := context.WithCancel(ctx)
-
-	go menu(ctx, in, ch)
-	return cancel, nil
+	return nil
 }
 
 func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error {
+	quotes := make(chan StringerFielder)
+	var fetch error
+	go func() {
+		fetch = InstanceQuotes(ctx, c, quotes)
+	}()
+
+	// Prompt Cloud Keys
+
 	keys := make(chan string)
 	cancel, err := PromptCloudKeys(ctx, c, keys, menu)
 	if err != nil {
@@ -220,20 +221,28 @@ func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error
 		cancel()
 	}
 
-	ch := make(chan string)
-	cancel, err = PromptInstanceQuote(ctx, c, ch, menu)
-	if err != nil {
-		return err
-	}
+	// Prompt Instance Quote
 
 	var title api.Title
-	for s := range ch {
-		var err error
-		title, err = api.ParseTitle(s)
-		if err != nil {
-			continue
+
+	{
+		ctx, cancel := context.WithCancel(ctx)
+		titles := make(chan string)
+
+		go menu(ctx, quotes, titles)
+
+		for s := range titles {
+			var err error
+			title, err = api.ParseTitle(s)
+			if err != nil {
+				continue
+			}
+			cancel()
 		}
-		cancel()
+	}
+
+	if fetch != nil {
+		return fmt.Errorf("failed fetching instance quotes: %s\n", fetch.Error())
 	}
 
 	ids, err := c.Launch(title, "", []string{key}, nil, "")
