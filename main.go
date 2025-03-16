@@ -12,6 +12,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 )
 
 // map[publickey]name
@@ -228,6 +229,7 @@ func (i *Instance) Fields() []string {
 		instance.Region.Description,
 		ip,
 		keys,
+		instance.Status.String(),
 		fmt.Sprintf("%5.2f", float32(instance.InstanceQuote.PriceCentsPerHour)/100),
 	}
 
@@ -259,7 +261,6 @@ func Instances(ctx context.Context, c *api.Client, ch chan StringerFielder) erro
 	})
 
 	go func() {
-		defer close(ch)
 		for i := range items {
 			select {
 			case ch <- &items[i]:
@@ -329,19 +330,81 @@ func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error
 	return nil
 }
 
+type NilFielder string
+
+func (nf NilFielder) String() string {
+	return string(nf)
+}
+
+func (_ NilFielder) Fields() []string {
+	return nil
+}
+
 func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) error {
-	instances := make(chan StringerFielder)
+	ch := make(chan StringerFielder)
 
 	var fetch error
 	go func() {
-		fetch = Instances(ctx, c, instances)
+		defer close(ch)
+		instances := make(map[string]*Instance)
+		for i := 0; ; i++ {
+
+			var latest []api.Instance
+			latest, fetch = c.Instances()
+			if fetch != nil {
+				return
+			}
+
+			set := make(map[string]*api.Instance, len(latest))
+			ptrs := make([]*api.Instance, len(latest))
+			for i := range latest {
+				set[latest[i].ID] = &latest[i]
+				ptrs[i] = &latest[i]
+			}
+
+			for id := range instances {
+				if _, ok := set[id]; ok {
+					continue
+				}
+
+				delete(instances, id)
+
+				select {
+				case ch <- NilFielder(id):
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			for id, instance := range set {
+				instances[id] = &Instance{*instance}
+			}
+
+			sort.Slice(ptrs, func(i, j int) bool {
+				return ptrs[i].ID < ptrs[j].ID
+			})
+
+			for _, ptr := range ptrs {
+				select {
+				case ch <- &Instance{*ptr}:
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(500*time.Millisecond):
+			}
+		}
 	}()
 
-	ch := make(chan string)
+	selections := make(chan string)
 
 	ctx, cancel := context.WithCancel(ctx)
-	go menu(ctx, instances, ch)
-	for ins := range ch {
+	go menu(ctx, ch, selections)
+	for ins := range selections {
 		fmt.Println(ins)
 		cancel()
 	}
@@ -389,13 +452,24 @@ func main() {
 	ctx := context.Background()
 	ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
 
-	err = PromptCreateInstance(ctx, c, menu)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+	var verb string
+	if len(os.Args) > 1 {
+		verb = os.Args[1]
 	}
 
-	err = PromptInstances(ctx, c, menu)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed at instance prompt: %s\n", err.Error())
+	switch verb {
+	case "c", "create":
+		err = PromptCreateInstance(ctx, c, menu)
+	case "i", "instances":
+		fallthrough
+	default:
+		err = PromptInstances(ctx, c, menu)
 	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+		os.Exit(1)
+	}
+
+
 }

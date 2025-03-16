@@ -184,8 +184,6 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, w io.Writer, ro
 		indicies    = make(map[string]int)
 	)
 
-	lines = Min(height, lines)
-
 	var input []rune
 
 	// default colors
@@ -195,25 +193,36 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, w io.Writer, ro
 
 loop:
 	for {
-		r := make([][]string, Min(lines, len(items)))
-		for i := range r {
+		r := make([][]string, lines)
+		for i := 0; i < len(r);  {
 			if i+offset >= len(items) {
 				break
 			}
-			r[i] = items[i+offset].Fields()
+			if f := items[i+offset].Fields(); f != nil {
+				r[i] = f
+				i++
+			} else {
+				j := i+offset
+				delete(indicies, items[j].String())
+				for j++; j < len(items); j++ {
+					indicies[items[j].String()] = j-1
+					items[j-1] = items[j]
+				}
+				items = items[:len(items)-1]
+			}
 		}
 		strs := Stretch(r, width)
 
 		for i, s := range strs {
 			var color Color
-			if i+offset == sel {
+			if i+offset == sel && i+offset < len(items) {
 				color = Reverse
 			}
 			DrawLine(display, s, color, width)
 		}
 
 		// cursor up n-times, cursor to column n
-		fmt.Fprintf(display, "\x1b[%dF\x1b[%dG", Min(lines, len(items)), len(input)+1)
+		fmt.Fprintf(display, "\x1b[%dF\x1b[%dG", lines, len(input)+1)
 
 		display.Flush()
 		var key []byte
@@ -225,6 +234,7 @@ loop:
 				continue
 			}
 			id := item.String()
+
 			if i, ok := indicies[item.String()]; ok {
 				items[i] = item
 			} else {
