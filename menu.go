@@ -84,7 +84,7 @@ type Fielder interface {
 	Fields() []string
 }
 
-type StringerFielder interface {
+type Rower interface {
 	Fielder
 	fmt.Stringer
 }
@@ -198,12 +198,12 @@ type Dimensions struct {
 	width, height int
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan string, tty *os.File, w io.Writer, rows chan StringerFielder, winch chan os.Signal, lines int) {
+func Menu(ctx context.Context, keys chan []byte, ch chan string, tty *os.File, w io.Writer, rows chan Rower, winch chan os.Signal, lines int) {
 	var (
 		width, height int
 		err error
 		sel, offset int
-		items       []StringerFielder
+		items       []Rower
 		display     = bufio.NewWriter(w)
 		indicies    = make(map[string]int)
 	)
@@ -280,6 +280,8 @@ loop:
 				return
 			}
 			continue
+		case <-ctx.Done():
+			break loop
 		}
 
 		switch string(key) {

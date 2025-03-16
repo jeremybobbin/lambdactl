@@ -47,7 +47,7 @@ func GetLocalPublicKeys() (m map[string]string, err error) {
 	return
 }
 
-type MenuFn func(ctx context.Context, in chan StringerFielder, out chan string)
+type MenuFn func(ctx context.Context, in chan Rower, out chan string)
 
 func MenuClosure(outer context.Context, w *os.File) (context.Context, MenuFn) {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
@@ -65,6 +65,7 @@ func MenuClosure(outer context.Context, w *os.File) (context.Context, MenuFn) {
 
 	inner, cancel := context.WithCancel(context.Background())
 	stdin := make(chan []byte)
+
 	go func() {
 		defer close(stdin)
 		var buf [4096]byte
@@ -74,6 +75,7 @@ func MenuClosure(outer context.Context, w *os.File) (context.Context, MenuFn) {
 			if i > len(buf)/2 {
 				i = 0
 			}
+
 			n, err = tty.Read(buf[i:])
 			if err != nil {
 				return
@@ -96,22 +98,8 @@ func MenuClosure(outer context.Context, w *os.File) (context.Context, MenuFn) {
 	}()
 
 
-	return inner, MenuFn(func(ctx context.Context, in chan StringerFielder, out chan string) {
-		keys := make(chan []byte)
-
-		go func() {
-			defer close(keys)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case key := <-stdin:
-					keys <- key
-				}
-			}
-		}()
-
-		Menu(ctx, keys, out, tty, w, in, winch, 10)
+	return inner, MenuFn(func(ctx context.Context, in chan Rower, out chan string) {
+		Menu(ctx, stdin, out, tty, w, in, winch, 10)
 		close(out)
 	})
 }
@@ -180,7 +168,7 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 	})
 
 	ctx, cancel := context.WithCancel(ctx)
-	in := make(chan StringerFielder)
+	in := make(chan Rower)
 
 	go func() {
 		defer close(in)
@@ -208,7 +196,7 @@ func (b Basic) Fields() []string {
 }
 
 func MenuBasic(ctx context.Context, values []string, menu MenuFn) string {
-	in := make(chan StringerFielder)
+	in := make(chan Rower)
 	out := make(chan string)
 
 	go func() {
@@ -245,7 +233,7 @@ func (q Quote) Fields() []string {
 	}
 }
 
-func InstanceQuotes(ctx context.Context, c *api.Client, ch chan StringerFielder) error {
+func InstanceQuotes(ctx context.Context, c *api.Client, ch chan Rower) error {
 	quotes, _, err := c.Availability()
 	if err != nil {
 		return fmt.Errorf("failed getting instance quotes: %s\n", err.Error())
@@ -321,7 +309,7 @@ func (i *Instance) Fields() []string {
 	return fields
 }
 
-func Instances(ctx context.Context, c *api.Client, ch chan StringerFielder) error {
+func Instances(ctx context.Context, c *api.Client, ch chan Rower) error {
 	instances, err := c.Instances()
 	if err != nil {
 		return err
@@ -353,7 +341,7 @@ func Instances(ctx context.Context, c *api.Client, ch chan StringerFielder) erro
 }
 
 func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error {
-	quotes := make(chan StringerFielder)
+	quotes := make(chan Rower)
 	var fetch error
 	go func() {
 		fetch = InstanceQuotes(ctx, c, quotes)
@@ -455,7 +443,7 @@ func (_ NilFielder) Fields() []string {
 }
 
 func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]Instance, error) {
-	ch := make(chan StringerFielder)
+	ch := make(chan Rower)
 
 	var fetch error
 	instances := make(map[string]*Instance)
