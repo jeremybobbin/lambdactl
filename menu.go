@@ -45,6 +45,10 @@ int teardown(int fd) {
 */
 import "C"
 
+const (
+	Padding = 2
+)
+
 func setup(f *os.File) (int, int, error) {
 	var err error
 	var w, h C.int
@@ -106,8 +110,7 @@ func Width(str string) (n int) {
 }
 
 func DrawLine(w io.Writer, t string, col Color, width int) {
-	padding := 2
-	buf := make([]rune, width-padding)
+	buf := make([]rune, width-Padding)
 
 	text := []rune(t)
 
@@ -154,7 +157,7 @@ func Stretch(items [][]string, width int) []string {
 		}
 	}
 
-	remaining := width
+	remaining := width - Padding
 	for _, w := range widths {
 		remaining -= w
 	}
@@ -172,7 +175,7 @@ func Stretch(items [][]string, width int) []string {
 			if j == len(columns)-1 {
 				row[j] = fmt.Sprintf("%*s", widths[j], column)
 			} else {
-				row[j] = fmt.Sprintf("%-*s", pad, column)
+				row[j] = fmt.Sprintf("%-*s", pad+widths[j], column)
 			}
 		}
 		rows[i] = strings.Join(row, "")
