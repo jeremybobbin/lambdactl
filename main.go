@@ -63,8 +63,8 @@ func MenuClosure(w io.Writer, stdin chan []byte, width, height int) MenuFn {
 			}
 		}()
 
-		defer close(out)
 		Menu(ctx, keys, out, w, in, 10, width, height)
+		close(out)
 	})
 }
 
@@ -147,6 +147,37 @@ func PromptCloudKeys(ctx context.Context, c *api.Client, ch chan string, menu Me
 
 	go menu(ctx, in, ch)
 	return cancel, nil
+}
+
+type Basic string
+
+func (b Basic) String() string {
+	return string(b)
+}
+
+func (b Basic) Fields() []string {
+	return []string{string(b)}
+}
+
+func MenuBasic(ctx context.Context, values []string, menu MenuFn) string {
+	in := make(chan StringerFielder)
+	out := make(chan string)
+
+	go func() {
+		defer close(in)
+		for _, s := range values {
+			select {
+			case in <- Basic(s):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go menu(ctx, in, out)
+	return <-out
 }
 
 type Quote struct {
@@ -317,15 +348,12 @@ func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error
 		return fmt.Errorf("failed fetching instance quotes: %s\n", fetch.Error())
 	}
 
-	ids, err := c.Launch(title, "", []string{key}, nil, "")
+	_, err = c.Launch(title, "", []string{key}, nil, "")
 	if err != nil {
 		return fmt.Errorf("failed launching instance: %s\n", err.Error())
 	}
 
-	fmt.Println("got", ids)
-
-	instances, err := c.Instances()
-	fmt.Println(instances, err)
+	//_, err := c.Instances()
 
 	return nil
 }
@@ -340,7 +368,7 @@ func (_ NilFielder) Fields() []string {
 	return nil
 }
 
-func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) error {
+func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]string, error) {
 	ch := make(chan StringerFielder)
 
 	var fetch error
@@ -404,12 +432,13 @@ func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	go menu(ctx, ch, selections)
-	for ins := range selections {
-		fmt.Println(ins)
+	var ids []string
+	for id := range selections {
+		ids = append(ids, id)
 		cancel()
 	}
 
-	return fetch
+	return ids, fetch
 }
 
 func main() {
@@ -452,23 +481,34 @@ func main() {
 	ctx := context.Background()
 	ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
 
-	var verb string
+	handle := func(verb string) {
+		switch verb {
+		case "c", "create":
+			err = PromptCreateInstance(ctx, c, menu)
+		case "i", "instances":
+			_, err = PromptInstances(ctx, c, menu)
+		default:
+			fmt.Fprintf(os.Stderr, "uh '%s'\n", verb)
+			return
+		}
+	}
+
 	if len(os.Args) > 1 {
-		verb = os.Args[1]
+		for _, arg := range os.Args[1:] {
+			handle(arg)
+		}
+	} else {
+		for {
+			verb := MenuBasic(ctx, []string{"create", "instances"}, menu)
+			if verb == "" {
+				break
+			}
+			handle(verb)
+		}
 	}
-
-	switch verb {
-	case "c", "create":
-		err = PromptCreateInstance(ctx, c, menu)
-	case "i", "instances":
-		fallthrough
-	default:
-		err = PromptInstances(ctx, c, menu)
-	}
-
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
-		os.Exit(1)
+		return
 	}
 
 

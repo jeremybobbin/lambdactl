@@ -160,7 +160,12 @@ func Stretch(items [][]string, width int) []string {
 	}
 
 	rows := make([]string, len(items))
-	pad := remaining / (len(columns) - 1)
+	var pad int
+	if len(columns) > 1 {
+		pad = remaining / (len(columns) - 1)
+	} else {
+		pad = remaining
+	}
 	for i, columns := range items {
 		row := make([]string, len(columns))
 		for j, column := range columns {
@@ -266,7 +271,7 @@ loop:
 			break loop
 		case "\r":
 			var item string
-			if sel < 0 || sel >= len(items)-1 {
+			if sel < 0 || sel >= len(items) {
 				item = string(input)
 			} else {
 				item = items[sel].String()
