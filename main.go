@@ -544,7 +544,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	ctx, menu := MenuClosure(ctx, os.Stderr)
 
-	handle := func(verb string) {
+	handle := func(verb string) (err error) {
 		switch verb {
 		case "c", "create":
 			err = PromptCreateInstance(ctx, c, menu)
@@ -563,19 +563,15 @@ func main() {
 			<-ctx.Done()
 			fmt.Fprintf(os.Stderr, "connecting...\n")
 			err = cmd.Run()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%+v", err)
-			}
-			return
 		default:
-			fmt.Fprintf(os.Stderr, "uh '%s'\n", verb)
-			return
+			err = fmt.Errorf("uh '%s'\n", verb)
 		}
+		return
 	}
 
 	if len(os.Args) > 1 {
 		for _, arg := range os.Args[1:] {
-			handle(arg)
+			err = handle(arg)
 		}
 	} else {
 		for {
@@ -583,7 +579,7 @@ func main() {
 			if verb == "" {
 				break
 			}
-			handle(verb)
+			err = handle(verb)
 		}
 	}
 
