@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -529,8 +530,19 @@ func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]Instanc
 }
 
 func main() {
+	config := os.Getenv("XDG_CONFIG_HOME")
+	if config == "" {
+		config = os.Getenv("HOME")
+	}
+	secrets := fmt.Sprintf("%s/%s", config, "lambdactl")
+	buf, err := os.ReadFile(secrets)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error - failed to read token from '%s': %v\n", secrets, err)
+		os.Exit(1)
+	}
+	token := string(bytes.TrimSpace(buf))
 
-	c, err := api.NewClient(&http.Client{}, "")
+	c, err := api.NewClient(&http.Client{}, token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to make API Client: %s\n", err.Error())
 	}
