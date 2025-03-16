@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"lambdactl/api"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"syscall"
 )
 
 // map[publickey]name
@@ -49,15 +49,18 @@ func GetLocalPublicKeys() (m map[string]string, err error) {
 
 type MenuFn func(ctx context.Context, in chan StringerFielder, out chan string)
 
-func MenuClosure(outer context.Context, w io.Writer) (context.Context, MenuFn) {
+func MenuClosure(outer context.Context, w *os.File) (context.Context, MenuFn) {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open tty: %s\n", err.Error())
 	}
-	width, height, err := setup(tty)
+	err = setup(tty)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed probing TTY size: %s\n", err.Error())
 	}
+
+	winch := make(chan os.Signal)
+	signal.Notify(winch, syscall.SIGWINCH)
 
 
 	inner, cancel := context.WithCancel(context.Background())
@@ -84,10 +87,12 @@ func MenuClosure(outer context.Context, w io.Writer) (context.Context, MenuFn) {
 	}()
 
 	go func() {
-		defer cancel()
-		defer tty.Close()
-		defer teardown(tty)
 		<-outer.Done()
+		cancel()
+		teardown(tty)
+		tty.Close()
+		signal.Stop(winch)
+		close(winch)
 	}()
 
 
@@ -106,7 +111,7 @@ func MenuClosure(outer context.Context, w io.Writer) (context.Context, MenuFn) {
 			}
 		}()
 
-		Menu(ctx, keys, out, w, in, 10, width, height)
+		Menu(ctx, keys, out, tty, w, in, winch, 10)
 		close(out)
 	})
 }

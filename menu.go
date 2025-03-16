@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
+	"os"
 )
 
 /*
@@ -18,25 +18,27 @@ import (
 
 static struct termios term[2];
 
-int setup(int fd, int *width, int *height) {
-	struct winsize ws;
-	int n;
-		if ((n = ioctl(fd, TIOCGWINSZ, &ws)) < 0) {
-			return errno;
-	}
-		*width = ws.ws_col;
-		*height = ws.ws_row;
+int setup(int fd) {
+	tcgetattr(fd, &term[0]);
+	term[1] = term[0];
+	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+	term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
+	term[1].c_cflag &= ~(CSIZE|PARENB);
+	term[1].c_cflag |= CS8;
+	term[1].c_cc[VMIN] = 1;
+	if (tcsetattr(fd, TCSANOW, &term[1]) < 0)
+		return errno;
+	return 0;
+}
 
-		tcgetattr(fd, &term[0]);
-		term[1] = term[0];
-		term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-		term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
-		term[1].c_cflag &= ~(CSIZE|PARENB);
-		term[1].c_cflag |= CS8;
-		term[1].c_cc[VMIN] = 1;
-		if (tcsetattr(fd, TCSANOW, &term[1]) < 0) {
+int dimensions(int fd, int *width, int *height) {
+	struct winsize ws;
+	if (ioctl(fd, TIOCGWINSZ, &ws) < 0) {
 		return errno;
 	}
+	*width = ws.ws_col;
+	*height = ws.ws_row;
+	return 0;
 }
 
 int teardown(int fd) {
@@ -49,13 +51,21 @@ const (
 	Padding = 2
 )
 
-func setup(f *os.File) (int, int, error) {
+func setup(f *os.File) error {
+	r := C.setup(C.int(f.Fd()))
+	if r != 0 {
+		return fmt.Errorf("CGO setup failed - return code %d", r)
+	}
+	return nil
+}
+
+func dimensions(f *os.File) (int, int, error) {
 	var err error
 	var w, h C.int
 
-	r := C.setup(C.int(f.Fd()), &w, &h)
+	r := C.dimensions(C.int(f.Fd()), &w, &h)
 	if r != 0 {
-		err = fmt.Errorf("CGO failed - return code %d", r)
+		err = fmt.Errorf("CGO dimensions failed - return code %d", r)
 	}
 	return int(w), int(h), err
 }
@@ -184,8 +194,14 @@ func Stretch(items [][]string, width int) []string {
 	return rows
 }
 
-func Menu(ctx context.Context, keys chan []byte, ch chan string, w io.Writer, rows chan StringerFielder, lines, width, height int) {
+type Dimensions struct {
+	width, height int
+}
+
+func Menu(ctx context.Context, keys chan []byte, ch chan string, tty *os.File, w io.Writer, rows chan StringerFielder, winch chan os.Signal, lines int) {
 	var (
+		width, height int
+		err error
 		sel, offset int
 		items       []StringerFielder
 		display     = bufio.NewWriter(w)
@@ -193,15 +209,18 @@ func Menu(ctx context.Context, keys chan []byte, ch chan string, w io.Writer, ro
 	)
 
 	var input []rune
+	width, height, err = dimensions(tty)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "menu err: %+v\n", err)
+		return
+	}
 
 	// default colors
 	fmt.Fprintf(display, "\x1b[0m")
 
-	// cursor to column 1, clear everything after the cursor
-
 loop:
 	for {
-		r := make([][]string, lines)
+		r := make([][]string, Min(lines, height))
 		for i := 0; i < len(r);  {
 			if i+offset >= len(items) {
 				break
@@ -230,7 +249,7 @@ loop:
 		}
 
 		// cursor up n-times, cursor to column n
-		fmt.Fprintf(display, "\x1b[%dF\x1b[%dG", lines, len(input)+1)
+		fmt.Fprintf(display, "\x1b[%dF\x1b[%dG", Min(lines, height), len(input)+1)
 
 		display.Flush()
 		var key []byte
@@ -254,6 +273,13 @@ loop:
 			if !ok {
 				break loop
 			}
+		case <-winch:
+			width, height, err = dimensions(tty)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "menu err: %+v\n", err)
+				return
+			}
+			continue
 		}
 
 		switch string(key) {
@@ -287,10 +313,10 @@ loop:
 		case string(0x40 ^ 'J'), string(0x40 ^ 'N'), "\x1bj", "\x1bn":
 			sel++
 			sel = Min(sel, len(items)-1)
-			if sel >= offset+lines {
+			if sel >= offset+Min(lines, height) {
 				offset++
 			}
-			offset = Min(offset, len(items)-lines)
+			offset = Min(offset, len(items)-Min(lines, height))
 			offset = Max(offset, 0)
 		case string(0x40 ^ 'K'), "\x1bk", string(0x40 ^ 'P'), "\x1bp":
 			if sel-1 <= 0 {
@@ -309,7 +335,7 @@ loop:
 			offset = 0
 			sel = 0
 		case "\x1bG":
-			offset = Max(0, len(items)-lines)
+			offset = Max(0, len(items)-Min(lines, height))
 			sel = Max(len(items)-1, 0)
 		case string(0x40 ^ '?'), string(0x40 ^ 'H'):
 			if len(input) == 0 {
