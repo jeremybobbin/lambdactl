@@ -8,6 +8,7 @@ import (
 	"lambdactl/api"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path"
 	"sort"
@@ -47,8 +48,49 @@ func GetLocalPublicKeys() (m map[string]string, err error) {
 
 type MenuFn func(ctx context.Context, in chan StringerFielder, out chan string)
 
-func MenuClosure(w io.Writer, stdin chan []byte, width, height int) MenuFn {
-	return MenuFn(func(ctx context.Context, in chan StringerFielder, out chan string) {
+func MenuClosure(outer context.Context, w io.Writer) (context.Context, MenuFn) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to open tty: %s\n", err.Error())
+	}
+	width, height, err := setup(tty)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed probing TTY size: %s\n", err.Error())
+	}
+
+
+	inner, cancel := context.WithCancel(context.Background())
+	stdin := make(chan []byte)
+	go func() {
+		defer close(stdin)
+		var buf [4096]byte
+
+		var err error
+		for i, n := 0, 0; ; i += n {
+			if i > len(buf)/2 {
+				i = 0
+			}
+			n, err = tty.Read(buf[i:])
+			if err != nil {
+				return
+			}
+			select {
+			case stdin <- buf[i : i+n]:
+			case <-outer.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer cancel()
+		defer tty.Close()
+		defer teardown(tty)
+		<-outer.Done()
+	}()
+
+
+	return inner, MenuFn(func(ctx context.Context, in chan StringerFielder, out chan string) {
 		keys := make(chan []byte)
 
 		go func() {
@@ -358,6 +400,28 @@ func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error
 	return nil
 }
 
+func PromptSSH(ctx context.Context, c *api.Client, menu MenuFn) (*exec.Cmd,error) {
+	instances, err := PromptInstances(ctx, c, menu)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(instances) < 1{
+		return nil, fmt.Errorf("no instances chosen")
+	}
+	instance := instances[0]
+
+	if instance.instance.IP == nil {
+		return nil, fmt.Errorf("chosen instance has no IP")
+	}
+
+	cmd := exec.Command("ssh", "ubuntu@"+*instance.instance.IP)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd, nil
+}
+
 type NilFielder string
 
 func (nf NilFielder) String() string {
@@ -368,13 +432,13 @@ func (_ NilFielder) Fields() []string {
 	return nil
 }
 
-func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]string, error) {
+func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]Instance, error) {
 	ch := make(chan StringerFielder)
 
 	var fetch error
+	instances := make(map[string]*Instance)
 	go func() {
 		defer close(ch)
-		instances := make(map[string]*Instance)
 		for i := 0; ; i++ {
 
 			var latest []api.Instance
@@ -438,40 +502,15 @@ func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]string,
 		cancel()
 	}
 
-	return ids, fetch
+	var r []Instance
+	for _, id := range ids {
+		r = append(r, *instances[id])
+	}
+
+	return r, fetch
 }
 
 func main() {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to open tty: %s\n", err.Error())
-	}
-	width, height, err := setup(tty)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed probing TTY size: %s\n", err.Error())
-	}
-
-	defer teardown(tty)
-
-	stdin := make(chan []byte)
-	go func() {
-		defer close(stdin)
-		var buf [4096]byte
-
-		var err error
-		for i, n := 0, 0; ; i += n {
-			if i > len(buf)/2 {
-				i = 0
-			}
-			n, err = tty.Read(buf[i:])
-			if err != nil {
-				return
-			}
-			stdin <- buf[i : i+n]
-		}
-	}()
-
-	menu := MenuClosure(os.Stderr, stdin, width, height)
 
 	c, err := api.NewClient(&http.Client{}, "")
 	if err != nil {
@@ -479,7 +518,8 @@ func main() {
 	}
 
 	ctx := context.Background()
-	ctx, _ = signal.NotifyContext(ctx, os.Interrupt)
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
+	ctx, menu := MenuClosure(ctx, os.Stderr)
 
 	handle := func(verb string) {
 		switch verb {
@@ -487,6 +527,19 @@ func main() {
 			err = PromptCreateInstance(ctx, c, menu)
 		case "i", "instances":
 			_, err = PromptInstances(ctx, c, menu)
+		case "s", "ssh":
+			var cmd *exec.Cmd
+			cmd, err = PromptSSH(ctx, c, menu)
+			if err != nil {
+				fmt.Println("ERR", err)
+			}
+			cancel()
+			<-ctx.Done()
+			fmt.Fprintf(os.Stderr, "connecting...\n")
+			err = cmd.Run()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%+v", err)
+			}
 		default:
 			fmt.Fprintf(os.Stderr, "uh '%s'\n", verb)
 			return
@@ -499,7 +552,7 @@ func main() {
 		}
 	} else {
 		for {
-			verb := MenuBasic(ctx, []string{"create", "instances"}, menu)
+			verb := MenuBasic(ctx, []string{"create", "instances", "ssh"}, menu)
 			if verb == "" {
 				break
 			}
