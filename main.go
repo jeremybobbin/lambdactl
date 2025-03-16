@@ -377,13 +377,16 @@ func PromptCreateInstance(ctx context.Context, c *api.Client, menu MenuFn) error
 		go menu(ctx, quotes, titles)
 
 		for s := range titles {
-			var err error
 			title, err = api.ParseTitle(s)
 			if err != nil {
 				continue
 			}
 			cancel()
 		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	if fetch != nil {
@@ -406,7 +409,7 @@ func PromptSSH(ctx context.Context, c *api.Client, menu MenuFn) (*exec.Cmd,error
 		return nil, err
 	}
 
-	if len(instances) < 1{
+	if len(instances) < 1 {
 		return nil, fmt.Errorf("no instances chosen")
 	}
 	instance := instances[0]
@@ -420,6 +423,19 @@ func PromptSSH(ctx context.Context, c *api.Client, menu MenuFn) (*exec.Cmd,error
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd, nil
+}
+
+func PromptTerminate(ctx context.Context, c *api.Client, menu MenuFn) (error) {
+	instances, err := PromptInstances(ctx, c, menu)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for i := range instances {
+		ids = append(ids, instances[i].instance.ID)
+	}
+	c.Terminate(ids)
+	return nil
 }
 
 type NilFielder string
@@ -504,7 +520,9 @@ func PromptInstances(ctx context.Context, c *api.Client, menu MenuFn) ([]Instanc
 
 	var r []Instance
 	for _, id := range ids {
-		r = append(r, *instances[id])
+		if instance, ok := instances[id]; ok {
+			r = append(r, *instance)
+		}
 	}
 
 	return r, fetch
@@ -527,11 +545,14 @@ func main() {
 			err = PromptCreateInstance(ctx, c, menu)
 		case "i", "instances":
 			_, err = PromptInstances(ctx, c, menu)
+		case "t", "terminate":
+			err = PromptTerminate(ctx, c, menu)
 		case "s", "ssh":
 			var cmd *exec.Cmd
 			cmd, err = PromptSSH(ctx, c, menu)
 			if err != nil {
-				fmt.Println("ERR", err)
+				fmt.Fprintf(os.Stderr, "error terminating: %+v\n", err)
+				return
 			}
 			cancel()
 			<-ctx.Done()
@@ -540,6 +561,7 @@ func main() {
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%+v", err)
 			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "uh '%s'\n", verb)
 			return
@@ -552,16 +574,19 @@ func main() {
 		}
 	} else {
 		for {
-			verb := MenuBasic(ctx, []string{"create", "instances", "ssh"}, menu)
+			verb := MenuBasic(ctx, []string{"create", "instances", "ssh", "terminate"}, menu)
 			if verb == "" {
 				break
 			}
 			handle(verb)
 		}
 	}
+
+	cancel()
+	<-ctx.Done()
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
-		return
 	}
 
 

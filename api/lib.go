@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -890,7 +889,7 @@ func (c *Client) Launch(title Title, name string, keys, filesystems []string, da
 
 	go func() {
 		defer w.Close()
-		enc := json.NewEncoder(io.MultiWriter(w, os.Stderr))
+		enc := json.NewEncoder(w)
 		err = enc.Encode(body)
 	}()
 
@@ -916,10 +915,42 @@ func (c *Client) Launch(title Title, name string, keys, filesystems []string, da
 	}
 
 	ids := make(map[string]struct{})
-	fmt.Println("got", len(response.Data.IDs), "instance IDs from cloud")
 	for _, id := range response.Data.IDs {
 		ids[id] = struct{}{}
 	}
 
 	return ids, nil
+}
+
+func (c *Client) Terminate(ids []string) (error) {
+	r, w := io.Pipe()
+	req, err := c.NewJSONRequest(context.Background(), "POST", "instance-operations/terminate", r)
+	if err != nil {
+		return err
+	}
+
+	type Body struct {
+		InstanceIDs []string `json:"instance_ids"`
+	}
+
+	body := Body {
+		ids,
+	}
+
+	go func() {
+		defer w.Close()
+		enc := json.NewEncoder(w)
+		err = enc.Encode(body)
+	}()
+
+	res, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if int(res.StatusCode) < 200 || int(res.StatusCode) >= 300 {
+		return fmt.Errorf("response not ok %d, %+v", res.StatusCode, res)
+	}
+
+	return nil
 }
