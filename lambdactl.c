@@ -99,7 +99,6 @@ int match_ssh_key(char *key) {
 
 int fetch_instances(int *fd) {
 	int n, pp[2];
-	char *key;
 
 	if (fd == NULL) {
 		errno = EINVAL;
@@ -122,7 +121,41 @@ int fetch_instances(int *fd) {
 	case 0:
 		dup2(pp[1], 1);
 		close(pp[0]);
-		return execlp("curl", "curl", "-s", "-u", key, "https://cloud.lambda.ai/api/v1/instances", NULL);
+		return execlp("curl", "curl", "-s", "https://cloud.lambda.ai/api/v1/instances", "-u", key, NULL);
+	default:
+		close(pp[1]);
+		return n;
+	}
+
+	return 0;
+
+}
+
+int fetch_ssh_keys(int *fd) {
+	int n, pp[2];
+
+	if (fd == NULL) {
+		errno = EINVAL;
+	}
+
+	if (pipe(pp) == -1) {
+		return -1;
+	}
+
+	printf("pipe %d %d\n", pp[0], pp[1]);
+
+	*fd = pp[0];
+
+	fprintf(stderr, "forking!\n");
+	switch ((n = fork())) {
+	case -1:
+		close(pp[0]);
+		close(pp[1]);
+		return -1;
+	case 0:
+		dup2(pp[1], 1);
+		close(pp[0]);
+		return execlp("curl", "curl", "-s", "https://cloud.lambda.ai/api/v1/ssh-keys", "-u", key, NULL);
 	default:
 		close(pp[1]);
 		return n;
@@ -153,10 +186,12 @@ int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
 	int tty, fd, n;
 
-	if ((key = getenv("LAMBDA_API_KEY")) == NULL) {
+	if ((key = getenv("LAMBDA_API_KEY")) == NULL || strlen(key) == 0) {
 		fprintf(stderr, "LAMBDA_API_KEY missing\n");
 		return 1;
 	}
+
+	fprintf(stderr, "KEY %s\n", key);
 
 	if ((tty = open("/dev/tty", O_RDONLY)) == -1) {
 		perror("failed to open tty");
@@ -188,7 +223,13 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
+	/*
 	n = fetch_instances(&fd);
+	printf("fetch instances %d %d\n", n, fd);
+	copy(1, fd);
+	*/
+
+	n = fetch_ssh_keys(&fd);
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
 
