@@ -1,7 +1,6 @@
 .POSIX:
 
-build:
-	go build
+CFLAGS=-Wall -Wextra -O2
+LDFLAGS=-lssl -lcrypto
 
-run: build
-	./lambdactl
+lambdactl:
