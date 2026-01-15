@@ -17,7 +17,6 @@ int fdstrcmp(int fd, const char *s) {
 
 	len = strlen(s);
 	for (i = 0;;) {
-		
 		if ((n = read(fd, buf, sizeof(buf))) < 0) {
 			return -1;
 		}
@@ -69,7 +68,6 @@ int match_ssh_key(char *key) {
 		if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
 			continue;
 		}
-		
 		if ((n = strlen(dp->d_name)) < 4) {
 			continue;
 		}
@@ -78,13 +76,12 @@ int match_ssh_key(char *key) {
 			continue;
 		}
 
-	
+
 		sprintf(&path[0], "%s/.ssh/%s", s, dp->d_name);
 		if ((fd = open(path, O_RDONLY)) == -1) {
 			fprintf(stderr, "failed opening %s\n", path);
 		}
 
-		
 		if ((n = fdstrcmp(fd, key)) == 1) {
 			fprintf(stderr, "matched %s\n", key);
 			return 1;
@@ -94,9 +91,69 @@ int match_ssh_key(char *key) {
 	return closedir(dir);
 }
 
-int main(/*int argc, char *argv[]*/) {
-	match_ssh_key("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2xqx6t8MBfheMevVi/n4XlA4T6hJgmrqgpH4W2epmc4tGPoE2EQjmk5QnXLc1jsYoxreHaVFCFIiz5y8XkxgPJxf5hiq4s42/g1xA3w/P4MVg/frDpa4rtSalXHXWJ9Piymcykeyeb8hlhcCU5RVqy1ftCjNHycKLWvGpdPDnU7Q/GVhR5qbDLwmDxwb0U85C9LGolnY6uiYLR4CfBNsDaZiRN1Re7IIzWLmU6MGNpewEO680IqoOtQyikI/NEyWdKqQpO4TAyNl994obBu8ucsq9BahPyCzHnCf37EVUB8Lz632ZRLp6RkG0KdmzFF4gJ+ANLwoE0zWKaBoclSKgEsxzMwLBO/AJ0HhsCfglFWDGr/kGxyrg9T1ERzYEL3882aHVnQMJ8A3jSxadVev9xUEBTRz4cCQVMjWieOz1qUj3sZHMMoxK80VgBEOxODsZ2ikIpDioamlzRSOhn0J9zZ7eGUkKlsJxbTPQtkxguFiJl9mg4Ym6P7mhZv9/HLc= jer@Amphibian\n");
+int fetch_instances(int *fd) {
+	int n, pp[2];
+	char *key;
 
+	if (fd == NULL) {
+		errno = EINVAL;
+	}
+
+	if (pipe(pp) == -1) {
+		return -1;
+	}
+	printf("pipe %d %d\n", pp[0], pp[1]);
+
+	*fd = pp[0];
+
+	if ((key = getenv("LAMBDA_API_KEY")) == NULL) {
+		return -1;
+	}
+
+	fprintf(stderr, "forking!\n");
+	switch ((n = fork())) {
+	case -1:
+		close(pp[0]);
+		close(pp[1]);
+		return -1;
+	case 0:
+		dup2(pp[1], 1);
+		close(pp[0]);
+		return execlp("curl", "curl", "-u", key, "https://cloud.lambda.ai/api/v1/instances", NULL);
+	default:
+		close(pp[1]);
+		return n;
+	}
+
+	return 0;
+
+}
+
+int copy(int a, int b) {
+	int n, m;
+	char buf[4096];
+
+	for (m = 0;; m += n) {
+		if ((n = read(b, buf, sizeof(buf))) <= 0) {
+			break;
+		}
+
+		if ((n = write(a, buf, n)) <= 0) {
+			break;
+		}
+	}
+
+	return m;
+}
+
+int main(/*int argc, char *argv[]*/) {
+	char buf[4096];
+	int fd, n;
+	n = fetch_instances(&fd);
+	printf("fetch instances %d %d\n", n, fd);
+	copy(1, fd);
+
+	//match_ssh_key("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2xqx6t8MBfheMevVi/n4XlA4T6hJgmrqgpH4W2epmc4tGPoE2EQjmk5QnXLc1jsYoxreHaVFCFIiz5y8XkxgPJxf5hiq4s42/g1xA3w/P4MVg/frDpa4rtSalXHXWJ9Piymcykeyeb8hlhcCU5RVqy1ftCjNHycKLWvGpdPDnU7Q/GVhR5qbDLwmDxwb0U85C9LGolnY6uiYLR4CfBNsDaZiRN1Re7IIzWLmU6MGNpewEO680IqoOtQyikI/NEyWdKqQpO4TAyNl994obBu8ucsq9BahPyCzHnCf37EVUB8Lz632ZRLp6RkG0KdmzFF4gJ+ANLwoE0zWKaBoclSKgEsxzMwLBO/AJ0HhsCfglFWDGr/kGxyrg9T1ERzYEL3882aHVnQMJ8A3jSxadVev9xUEBTRz4cCQVMjWieOz1qUj3sZHMMoxK80VgBEOxODsZ2ikIpDioamlzRSOhn0J9zZ7eGUkKlsJxbTPQtkxguFiJl9mg4Ym6P7mhZv9/HLc= jer@Amphibian\n");
 	return 0;
 }
 
