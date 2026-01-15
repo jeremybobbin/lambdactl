@@ -9,33 +9,8 @@
 #include <unistd.h>
 
 static struct termios term[2];
-
-int setup(int fd) {
-	tcgetattr(fd, &term[0]);
-	term[1] = term[0];
-	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-	term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
-	term[1].c_cflag &= ~(CSIZE|PARENB);
-	term[1].c_cflag |= CS8;
-	term[1].c_cc[VMIN] = 1;
-	if (tcsetattr(fd, TCSANOW, &term[1]) < 0)
-		return errno;
-	return 0;
-}
-
-int dimensions(int fd, int *width, int *height) {
-	struct winsize ws;
-	if (ioctl(fd, TIOCGWINSZ, &ws) < 0) {
-		return errno;
-	}
-	*width = ws.ws_col;
-	*height = ws.ws_row;
-	return 0;
-}
-
-int teardown(int fd) {
-	return tcsetattr(fd, TCSANOW, &term[0]);
-}
+static struct winsize ws;
+char *key;
 
 int fdstrcmp(int fd, const char *s) {
 	int len, i, n;
@@ -133,13 +108,10 @@ int fetch_instances(int *fd) {
 	if (pipe(pp) == -1) {
 		return -1;
 	}
+
 	printf("pipe %d %d\n", pp[0], pp[1]);
 
 	*fd = pp[0];
-
-	if ((key = getenv("LAMBDA_API_KEY")) == NULL) {
-		return -1;
-	}
 
 	fprintf(stderr, "forking!\n");
 	switch ((n = fork())) {
@@ -150,7 +122,7 @@ int fetch_instances(int *fd) {
 	case 0:
 		dup2(pp[1], 1);
 		close(pp[0]);
-		return execlp("curl", "curl", "-u", key, "https://cloud.lambda.ai/api/v1/instances", NULL);
+		return execlp("curl", "curl", "-s", "-u", key, "https://cloud.lambda.ai/api/v1/instances", NULL);
 	default:
 		close(pp[1]);
 		return n;
@@ -179,7 +151,43 @@ int copy(int a, int b) {
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int fd, n;
+	int tty, fd, n;
+
+	if ((key = getenv("LAMBDA_API_KEY")) == NULL) {
+		fprintf(stderr, "LAMBDA_API_KEY missing\n");
+		return 1;
+	}
+
+	if ((tty = open("/dev/tty", O_RDONLY)) == -1) {
+		perror("failed to open tty");
+		return 1;
+	}
+
+	tcgetattr(tty, &term[0]);
+	term[1] = term[0];
+	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+	term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
+	term[1].c_cflag &= ~(CSIZE|PARENB);
+	term[1].c_cflag |= CS8;
+	term[1].c_cc[VMIN] = 1;
+
+	if (tcsetattr(tty, TCSANOW, &term[1]) < 0) {
+		perror("failed to setup tty");
+		return 1;
+	}
+
+	if (ioctl(tty, TIOCGWINSZ, &ws) < 0) {
+		perror("failed to get tty size");
+		return 1;
+	}
+
+	fprintf(stderr, "got width & height: %d, %d\n", ws.ws_col, ws.ws_row);
+
+	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
+		perror("failed to teardown tty");
+		return 1;
+	}
+
 	n = fetch_instances(&fd);
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
