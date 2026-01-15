@@ -1,10 +1,41 @@
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
 #include <dirent.h>
-#include <stdlib.h>
-#include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
+
+static struct termios term[2];
+
+int setup(int fd) {
+	tcgetattr(fd, &term[0]);
+	term[1] = term[0];
+	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+	term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
+	term[1].c_cflag &= ~(CSIZE|PARENB);
+	term[1].c_cflag |= CS8;
+	term[1].c_cc[VMIN] = 1;
+	if (tcsetattr(fd, TCSANOW, &term[1]) < 0)
+		return errno;
+	return 0;
+}
+
+int dimensions(int fd, int *width, int *height) {
+	struct winsize ws;
+	if (ioctl(fd, TIOCGWINSZ, &ws) < 0) {
+		return errno;
+	}
+	*width = ws.ws_col;
+	*height = ws.ws_row;
+	return 0;
+}
+
+int teardown(int fd) {
+	return tcsetattr(fd, TCSANOW, &term[0]);
+}
 
 int fdstrcmp(int fd, const char *s) {
 	int len, i, n;
