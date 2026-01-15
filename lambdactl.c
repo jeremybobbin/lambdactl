@@ -121,14 +121,28 @@ int fetch_instances(int *fd) {
 	case 0:
 		dup2(pp[1], 1);
 		close(pp[0]);
-		return execlp("curl", "curl", "-s", "https://cloud.lambda.ai/api/v1/instances", "-u", key, NULL);
+		return execl(
+			"/bin/sh",
+			"/bin/sh",
+			"-c",
+			"curl -s https://cloud.lambda.ai/api/v1/instances -u \"$1\" | \
+				jq -r \"$2\"",
+			"/bin/sh",
+			key,
+			".data[] | [ \
+				.ip, \
+				.status, \
+				.instance_type.description, \
+				.region.description, \
+				.instance_type.price_cents_per_hour, \
+				.ssh_key_names[] \
+			] | @tsv", \
+			NULL
+		);
 	default:
 		close(pp[1]);
 		return n;
 	}
-
-	return 0;
-
 }
 
 int fetch_ssh_keys(int *fd) {
@@ -223,15 +237,15 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	/*
 	n = fetch_instances(&fd);
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
-	*/
 
+/*
 	n = fetch_ssh_keys(&fd);
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
+	*/
 
 	//match_ssh_key("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2xqx6t8MBfheMevVi/n4XlA4T6hJgmrqgpH4W2epmc4tGPoE2EQjmk5QnXLc1jsYoxreHaVFCFIiz5y8XkxgPJxf5hiq4s42/g1xA3w/P4MVg/frDpa4rtSalXHXWJ9Piymcykeyeb8hlhcCU5RVqy1ftCjNHycKLWvGpdPDnU7Q/GVhR5qbDLwmDxwb0U85C9LGolnY6uiYLR4CfBNsDaZiRN1Re7IIzWLmU6MGNpewEO680IqoOtQyikI/NEyWdKqQpO4TAyNl994obBu8ucsq9BahPyCzHnCf37EVUB8Lz632ZRLp6RkG0KdmzFF4gJ+ANLwoE0zWKaBoclSKgEsxzMwLBO/AJ0HhsCfglFWDGr/kGxyrg9T1ERzYEL3882aHVnQMJ8A3jSxadVev9xUEBTRz4cCQVMjWieOz1qUj3sZHMMoxK80VgBEOxODsZ2ikIpDioamlzRSOhn0J9zZ7eGUkKlsJxbTPQtkxguFiJl9mg4Ym6P7mhZv9/HLc= jer@Amphibian\n");
 	return 0;
