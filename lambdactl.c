@@ -5,10 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
 
 #define PADDING 2
+#define CONTROL(ch)   (ch ^ 0x40)
 
 #define MAX(a,b)      ((a) > (b) ? (a) : (b))
 #define LENGTH(x)  ((int)(sizeof (x) / sizeof *(x)))
@@ -315,7 +317,8 @@ int copy(int a, int b) {
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int tty, fd, n;
+	int i, n, fd, tty;
+	fd_set rs;
 
 	if ((key = getenv("LAMBDA_API_KEY")) == NULL || strlen(key) == 0) {
 		fprintf(stderr, "LAMBDA_API_KEY missing\n");
@@ -349,11 +352,6 @@ int main(/*int argc, char *argv[]*/) {
 
 	fprintf(stderr, "got width & height: %d, %d\n", ws.ws_col, ws.ws_row);
 
-	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
-		perror("failed to teardown tty");
-		return 1;
-	}
-
 	n = fetch_instances(&fd);
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
@@ -375,10 +373,42 @@ int main(/*int argc, char *argv[]*/) {
 	char **r = stretch((char**)items, LENGTH(items), ws.ws_col);
 	printf("done\n");
 
-	int i;
-
 	for (i = 0; i < LENGTH(items); i++) {
 		printf("%d(%d):\n%s\n", i, strlen(r[i]), r[i]);
+	}
+
+	for (;;) {
+		FD_ZERO(&rs);
+		FD_SET(0, &rs);
+
+		if ((n = select(1, &rs, NULL, NULL, NULL)) == -1) {
+			perror("select");
+			return 1;
+		}
+
+		if (FD_ISSET(0, &rs)) {
+			if ((n = read(0, &buf[0], sizeof(buf))) == -1) {
+				perror("read stdin");
+				break;
+			}
+
+			switch (buf[0]) {
+			case 'q': case CONTROL('D'): case CONTROL('['):
+				break;
+			case '\r':
+				continue;
+			default:
+				fprintf(stderr, "read %d: '%.*s'\n", n, n, buf);
+				continue;
+			}
+			break;
+		}
+	}
+
+
+	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
+		perror("failed to teardown tty");
+		return 1;
 	}
 
 	//match_ssh_key("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2xqx6t8MBfheMevVi/n4XlA4T6hJgmrqgpH4W2epmc4tGPoE2EQjmk5QnXLc1jsYoxreHaVFCFIiz5y8XkxgPJxf5hiq4s42/g1xA3w/P4MVg/frDpa4rtSalXHXWJ9Piymcykeyeb8hlhcCU5RVqy1ftCjNHycKLWvGpdPDnU7Q/GVhR5qbDLwmDxwb0U85C9LGolnY6uiYLR4CfBNsDaZiRN1Re7IIzWLmU6MGNpewEO680IqoOtQyikI/NEyWdKqQpO4TAyNl994obBu8ucsq9BahPyCzHnCf37EVUB8Lz632ZRLp6RkG0KdmzFF4gJ+ANLwoE0zWKaBoclSKgEsxzMwLBO/AJ0HhsCfglFWDGr/kGxyrg9T1ERzYEL3882aHVnQMJ8A3jSxadVev9xUEBTRz4cCQVMjWieOz1qUj3sZHMMoxK80VgBEOxODsZ2ikIpDioamlzRSOhn0J9zZ7eGUkKlsJxbTPQtkxguFiJl9mg4Ym6P7mhZv9/HLc= jer@Amphibian\n");
