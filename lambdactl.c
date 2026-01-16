@@ -8,9 +8,162 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define PADDING 2
+
+#define MAX(a,b)      ((a) > (b) ? (a) : (b))
+#define LENGTH(x)  ((int)(sizeof (x) / sizeof *(x)))
+
 static struct termios term[2];
 static struct winsize ws;
 char *key;
+
+int draw_line(int fd, char *text, int color, int width) {
+	char *buf;
+	int i, j, n;
+	
+	if ((buf = malloc((width-PADDING))) == NULL) {
+		perror("malloc");
+		exit(1);
+	}
+
+	for (i = 0, j = 0, n = 0; i < (width-PADDING); i++) {
+		if (n > 0) {
+			n--;
+			buf[i] = ' ';
+		} else if (j < (int) strlen(text)) {
+			switch (text[j]) {
+			case '\t':
+				n = 7;
+				buf[i] = ' ';
+				j++;
+				break;
+			default:
+				buf[i] = text[j];
+				break;
+				j++;
+			}
+		} else {
+			buf[i] = ' ';
+		}
+	}
+
+	switch (color) {
+	case 0: // default
+		return dprintf(fd, "\n\x1b[2K %s ", buf);
+	default: // reverse
+		// cursor column n
+		return dprintf(fd, "\n\x1b[2K\x1b[7m %s \x1b[0m", buf);
+	}
+}
+
+
+// items - tsv
+char **stretch(char **items, int n, int width) {
+	int i, j, m, max = 0, pad, remaining, len;
+	char **columns, **rows, *row, *str;
+	int *widths;
+
+	// for every row, count the columns, to learn the maximum number of columns required
+	fprintf(stderr, "debug 1 %d\n", n);
+	for (i = 0; i < n; i++) {
+		m = 1;
+		str = items[i];
+		for (j = 0; str[j]; j++) {
+			if (str[j] == '\t') {
+				m++;
+			}
+		}
+
+		max = MAX(m, max);
+		fprintf(stderr, "max: %d %d\n", m, max);
+	}
+
+	fprintf(stderr, "debug 2\n");
+	if ((columns = malloc(sizeof(*columns)*max)) == NULL) {
+		return NULL;
+	}
+
+	if ((widths = malloc(sizeof(*widths)*max)) == NULL) {
+		return NULL;
+	}
+
+	fprintf(stderr, "debug 3\n");
+	for (i = 0; i < n; i++) {
+		str = items[i];
+
+		j = 0;
+		while (*str) {
+			for (len = 0; str[len] && str[len] != '\t'; len++);
+			widths[j] = MAX(widths[j], len);
+			fprintf(stderr, "set pad %d %d to %d\n", i, j, widths[j]);
+
+			if (str[len] == '\0') {
+				break;
+			} 
+
+			str += len + 1;
+			j++;
+		}
+	}
+
+	remaining = width - PADDING;
+	fprintf(stderr, "determed remianining %d = %d - %d\n", remaining, width, PADDING);
+	for (i = 0; i < max; i++) {
+
+		fprintf(stderr, "width: %d\n", widths[i]);
+		remaining -= widths[i];
+	}
+
+	if ((rows = malloc(sizeof(*rows)*n)) == NULL) {
+		return NULL;
+	}
+
+	if (max > 1) {
+		pad = remaining / (max - 1);
+		printf("determined pad %d : %d / (%d - 1)\n", pad, remaining, max);
+	} else {
+		pad = remaining;
+		printf("determined pad %d : %d\n", pad, remaining);
+	}
+
+	for (i = 0; i < n; i++) {
+		if ((rows[i] = malloc(sizeof(**rows)*width)) == NULL) {
+			return NULL;
+		}
+
+		row = rows[i];
+		str = items[i];
+		j = 0;
+		char *pr = row;
+		char *og = row;
+		while (str && *str) {
+			for (len = 0; str[len] && str[len] != '\t'; len++);
+
+			if (j == max-1) {
+				row = row + sprintf(row, "%*.*s", widths[j], len, str);
+				printf("params: %d %d %s\n", widths[j], len, str);
+			} else {
+				row = row + sprintf(row, "%-*.*s", pad+widths[j], len, str);
+				printf("params: %d %d %s\n", pad+widths[j], len, str);
+			}
+			//printf("item(%d): '%*.*s'\n", j, );
+			//printf("added column: %d '%.*s' '%s' %s\n", len, len, pr, pr);
+			//printf("row:\n%s\n", og);
+			//printf("item added: '%*.*s'\n", widths[j], len, str);
+
+			j++;
+
+			if (!str[len]) {
+				break;
+			}
+			str += len+1;
+			pr = row;
+		}
+	}
+
+	return rows;
+}
+
 
 int fdstrcmp(int fd, const char *s) {
 	int len, i, n;
@@ -229,6 +382,23 @@ int main(/*int argc, char *argv[]*/) {
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
 	*/
+
+	const char *items[] = {
+		"File\tCamel!\tABC",
+		"Cockboy yeah yeah \tCut\tABC",
+		"View\tZoom In\tABC",
+		"Help\tAbout\tABC"
+	};
+
+	printf("stretching items\n");
+	char **r = stretch((char**)items, LENGTH(items), ws.ws_col);
+	printf("done\n");
+
+	int i;
+
+	for (i = 0; i < LENGTH(items); i++) {
+		printf("%d(%d):\n%s\n", i, strlen(r[i]), r[i]);
+	}
 
 	//match_ssh_key("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2xqx6t8MBfheMevVi/n4XlA4T6hJgmrqgpH4W2epmc4tGPoE2EQjmk5QnXLc1jsYoxreHaVFCFIiz5y8XkxgPJxf5hiq4s42/g1xA3w/P4MVg/frDpa4rtSalXHXWJ9Piymcykeyeb8hlhcCU5RVqy1ftCjNHycKLWvGpdPDnU7Q/GVhR5qbDLwmDxwb0U85C9LGolnY6uiYLR4CfBNsDaZiRN1Re7IIzWLmU6MGNpewEO680IqoOtQyikI/NEyWdKqQpO4TAyNl994obBu8ucsq9BahPyCzHnCf37EVUB8Lz632ZRLp6RkG0KdmzFF4gJ+ANLwoE0zWKaBoclSKgEsxzMwLBO/AJ0HhsCfglFWDGr/kGxyrg9T1ERzYEL3882aHVnQMJ8A3jSxadVev9xUEBTRz4cCQVMjWieOz1qUj3sZHMMoxK80VgBEOxODsZ2ikIpDioamlzRSOhn0J9zZ7eGUkKlsJxbTPQtkxguFiJl9mg4Ym6P7mhZv9/HLc= jer@Amphibian\n");
 	return 0;
