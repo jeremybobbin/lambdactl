@@ -121,24 +121,7 @@ int fetch_instances(int *fd) {
 	case 0:
 		dup2(pp[1], 1);
 		close(pp[0]);
-		return execl(
-			"/bin/sh",
-			"/bin/sh",
-			"-c",
-			"curl -s https://cloud.lambda.ai/api/v1/instances -u \"$1\" | \
-				jq -r \"$2\"",
-			"/bin/sh",
-			key,
-			".data[] | [ \
-				.ip, \
-				.status, \
-				.instance_type.description, \
-				.region.description, \
-				.instance_type.price_cents_per_hour, \
-				.ssh_key_names[] \
-			] | @tsv", \
-			NULL
-		);
+		return execl("bin/instances/get", "get");
 	default:
 		close(pp[1]);
 		return n;
