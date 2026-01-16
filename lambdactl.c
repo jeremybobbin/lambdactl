@@ -57,14 +57,13 @@ int draw_line(int fd, char *text, int color, int width) {
 }
 
 
-// items - tsv
+// items - array of tsv
 char **stretch(char **items, int n, int width) {
 	int i, j, m, max = 0, pad, remaining, len;
 	char **columns, **rows, *row, *str;
 	int *widths;
 
 	// for every row, count the columns, to learn the maximum number of columns required
-	fprintf(stderr, "debug 1 %d\n", n);
 	for (i = 0; i < n; i++) {
 		m = 1;
 		str = items[i];
@@ -78,16 +77,15 @@ char **stretch(char **items, int n, int width) {
 		fprintf(stderr, "max: %d %d\n", m, max);
 	}
 
-	fprintf(stderr, "debug 2\n");
 	if ((columns = malloc(sizeof(*columns)*max)) == NULL) {
 		return NULL;
 	}
 
+	// this is the max widths of each column
 	if ((widths = malloc(sizeof(*widths)*max)) == NULL) {
 		return NULL;
 	}
 
-	fprintf(stderr, "debug 3\n");
 	for (i = 0; i < n; i++) {
 		str = items[i];
 
@@ -95,7 +93,6 @@ char **stretch(char **items, int n, int width) {
 		while (*str) {
 			for (len = 0; str[len] && str[len] != '\t'; len++);
 			widths[j] = MAX(widths[j], len);
-			fprintf(stderr, "set pad %d %d to %d\n", i, j, widths[j]);
 
 			if (str[len] == '\0') {
 				break;
@@ -107,10 +104,7 @@ char **stretch(char **items, int n, int width) {
 	}
 
 	remaining = width - PADDING;
-	fprintf(stderr, "determed remianining %d = %d - %d\n", remaining, width, PADDING);
 	for (i = 0; i < max; i++) {
-
-		fprintf(stderr, "width: %d\n", widths[i]);
 		remaining -= widths[i];
 	}
 
@@ -120,10 +114,8 @@ char **stretch(char **items, int n, int width) {
 
 	if (max > 1) {
 		pad = remaining / (max - 1);
-		printf("determined pad %d : %d / (%d - 1)\n", pad, remaining, max);
 	} else {
 		pad = remaining;
-		printf("determined pad %d : %d\n", pad, remaining);
 	}
 
 	for (i = 0; i < n; i++) {
@@ -134,30 +126,20 @@ char **stretch(char **items, int n, int width) {
 		row = rows[i];
 		str = items[i];
 		j = 0;
-		char *pr = row;
-		char *og = row;
 		while (str && *str) {
 			for (len = 0; str[len] && str[len] != '\t'; len++);
 
 			if (j == max-1) {
 				row = row + sprintf(row, "%*.*s", widths[j], len, str);
-				printf("params: %d %d %s\n", widths[j], len, str);
 			} else {
 				row = row + sprintf(row, "%-*.*s", pad+widths[j], len, str);
-				printf("params: %d %d %s\n", pad+widths[j], len, str);
 			}
-			//printf("item(%d): '%*.*s'\n", j, );
-			//printf("added column: %d '%.*s' '%s' %s\n", len, len, pr, pr);
-			//printf("row:\n%s\n", og);
-			//printf("item added: '%*.*s'\n", widths[j], len, str);
-
 			j++;
 
 			if (!str[len]) {
 				break;
 			}
 			str += len+1;
-			pr = row;
 		}
 	}
 
