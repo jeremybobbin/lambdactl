@@ -56,7 +56,6 @@ int draw_line(int fd, char *text, int color, int width) {
 	}
 }
 
-
 // items - array of tsv
 char **stretch(char **items, int n, int width) {
 	int i, j, m, max = 0, pad, remaining, len;
