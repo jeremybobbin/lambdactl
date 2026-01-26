@@ -12,6 +12,7 @@
 #define PADDING 2
 #define CONTROL(ch)   (ch ^ 0x40)
 
+#define MIN(a,b)      ((a) < (b) ? (a) : (b))
 #define MAX(a,b)      ((a) > (b) ? (a) : (b))
 #define LENGTH(x)  ((int)(sizeof (x) / sizeof *(x)))
 
@@ -19,16 +20,16 @@ static struct termios term[2];
 static struct winsize ws;
 char *key;
 
-int draw_line(int fd, char *text, int color, int width) {
+int draw_line(int fd, char *text, int color) {
 	char *buf;
 	int i, j, n;
-	
-	if ((buf = malloc((width-PADDING))) == NULL) {
+
+	if ((buf = malloc((ws.ws_col-PADDING))) == NULL) {
 		perror("malloc");
 		exit(1);
 	}
 
-	for (i = 0, j = 0, n = 0; i < (width-PADDING); i++) {
+	for (i = 0, j = 0, n = 0; i < (ws.ws_col-PADDING); i++) {
 		if (n > 0) {
 			n--;
 			buf[i] = ' ';
@@ -58,14 +59,47 @@ int draw_line(int fd, char *text, int color, int width) {
 	}
 }
 
+int read_tsv(int fd, char ***options, int *len) {
+	static int i, n;
+	static char buf[2048];
+
+	if (options == NULL) {
+		fprintf(stderr, "read_tsv failure\n");
+		exit(1);
+	}
+
+	if ((n = read(optionfd, &buf[i], sizeof(buf)-i)) == -1) {
+		perror("read in read_tsv");
+		break;
+	}
+
+	for (; i < n; n++) {
+		if (buf[i] == '\n') {
+			if (((*options)[*len] = option = malloc(n)) == NULL) {
+				perror("malloc option");
+				exit(1);
+			}
+			(*len)++;
+		}
+		switch (buf[i]) {
+		case '\n':
+			if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
+				perror("malloc options");
+				break;
+			}
+		}
+	}
+	memmove(buf, &buf[i], n-i);
+	i = 0;
+}
+
 // items - array of tsv
-char **stretch(char **items, int n, int width) {
-	int i, j, m, max = 0, pad, remaining, len;
+char **stretch(char **items, int len) {
+	int i, j, n, m, max = 0, pad, remaining, *widths;
 	char **columns, **rows, *row, *str;
-	int *widths;
 
 	// for every row, count the columns, to learn the maximum number of columns required
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < len; i++) {
 		m = 1;
 		str = items[i];
 		for (j = 0; str[j]; j++) {
@@ -75,7 +109,6 @@ char **stretch(char **items, int n, int width) {
 		}
 
 		max = MAX(m, max);
-		fprintf(stderr, "max: %d %d\n", m, max);
 	}
 
 	if ((columns = malloc(sizeof(*columns)*max)) == NULL) {
@@ -87,29 +120,29 @@ char **stretch(char **items, int n, int width) {
 		return NULL;
 	}
 
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < len; i++) {
 		str = items[i];
 
 		j = 0;
 		while (*str) {
-			for (len = 0; str[len] && str[len] != '\t'; len++);
-			widths[j] = MAX(widths[j], len);
+			for (n = 0; str[n] && str[n] != '\t'; n++);
+			widths[j] = MAX(widths[j], n);
 
-			if (str[len] == '\0') {
+			if (str[n] == '\0') {
 				break;
 			} 
 
-			str += len + 1;
+			str += n + 1;
 			j++;
 		}
 	}
 
-	remaining = width - PADDING;
+	remaining = ws.ws_col - PADDING;
 	for (i = 0; i < max; i++) {
 		remaining -= widths[i];
 	}
 
-	if ((rows = malloc(sizeof(*rows)*n)) == NULL) {
+	if ((rows = malloc(sizeof(*rows)*len)) == NULL) {
 		return NULL;
 	}
 
@@ -119,8 +152,8 @@ char **stretch(char **items, int n, int width) {
 		pad = remaining;
 	}
 
-	for (i = 0; i < n; i++) {
-		if ((rows[i] = malloc(sizeof(**rows)*width)) == NULL) {
+	for (i = 0; i < len; i++) {
+		if ((rows[i] = malloc(sizeof(**rows)*ws.ws_col)) == NULL) {
 			return NULL;
 		}
 
@@ -128,19 +161,19 @@ char **stretch(char **items, int n, int width) {
 		str = items[i];
 		j = 0;
 		while (str && *str) {
-			for (len = 0; str[len] && str[len] != '\t'; len++);
+			for (n = 0; str[n] && str[n] != '\t'; n++);
 
 			if (j == max-1) {
-				row = row + sprintf(row, "%*.*s", widths[j], len, str);
+				row = row + sprintf(row, "%*.*s", widths[j], n, str);
 			} else {
-				row = row + sprintf(row, "%-*.*s", pad+widths[j], len, str);
+				row = row + sprintf(row, "%-*.*s", pad+widths[j], n, str);
 			}
 			j++;
 
-			if (!str[len]) {
+			if (!str[n]) {
 				break;
 			}
-			str += len+1;
+			str += n+1;
 		}
 	}
 
@@ -244,11 +277,8 @@ int fetch_instances(int *fd) {
 		return -1;
 	}
 
-	printf("pipe %d %d\n", pp[0], pp[1]);
-
 	*fd = pp[0];
 
-	fprintf(stderr, "forking!\n");
 	switch ((n = fork())) {
 	case -1:
 		close(pp[0]);
@@ -275,11 +305,8 @@ int fetch_ssh_keys(int *fd) {
 		return -1;
 	}
 
-	printf("pipe %d %d\n", pp[0], pp[1]);
-
 	*fd = pp[0];
 
-	fprintf(stderr, "forking!\n");
 	switch ((n = fork())) {
 	case -1:
 		close(pp[0]);
@@ -315,6 +342,218 @@ int copy(int a, int b) {
 	return m;
 }
 
+int menu(int optionfd, int out, int ttyfd, int intrfd) {
+	int i, n, sel, offset, color, len = 0, maxfd = 0;
+	char buf[2048], **options = NULL, *option;
+	fd_set rs, ws;
+	offset = 0;
+
+	maxfd = MAX(maxfd, optionfd);
+	maxfd = MAX(maxfd, out);
+	maxfd = MAX(maxfd, ttyfd);
+	maxfd = MAX(maxfd, intrfd);
+
+	// default colors
+	write(ttyfd, "\x1b[0m", sizeof("\x1b[0m")-1);
+
+	for (;;) {
+		FD_ZERO(&rs);
+		FD_ZERO(&ws);
+
+		fprintf(stderr, "loop\n");
+		//FD_SET(ttyfd, &rs);
+		//FD_SET(ttyfd, &ws);
+		FD_SET(optionfd, &rs);
+		//FD_SET(intrfd, &rs);
+
+		fprintf(stderr, "selecting\n", n);
+		if ((n = select(maxfd+1, &rs, &ws, NULL, NULL)) == -1) {
+			perror("select");
+			return 1;
+		}
+
+		fprintf(stderr, "select %d\n", n);
+
+		if (FD_ISSET(ttyfd, &rs)) {
+			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
+				perror("read stdin");
+				break;
+			}
+
+			switch (buf[0]) {
+			}
+			break;
+		}
+
+		if (FD_ISSET(intrfd, &rs)) {
+			if ((n = read(intrfd, buf, sizeof(buf))) == -1) {
+				perror("read intrfd in menu");
+				break;
+			}
+
+			switch (buf[0]) {
+			}
+			break;
+		}
+
+		if (FD_ISSET(optionfd, &rs)) {
+			fprintf(stderr, "optionfd set - realloc: %d %d\n", len, options);
+			if ((options = realloc(options, sizeof(*options)*(len+1))) == NULL) {
+				perror("malloc options");
+				break;
+			}
+
+			if ((n = read(optionfd, buf, sizeof(buf))) == -1) {
+				perror("read stdin");
+				break;
+			}
+
+			for (i = 0; i < n; n++) {
+				if (i == 0 || buf[i] == '\n') {
+					if ((options[len] = option = malloc(n)) == NULL) {
+						perror("malloc option");
+						exit(1);
+					}
+					len++;
+				}
+				switch (buf[i]) {
+				case '\n':
+				}
+			}
+
+			len++;
+			fprintf(stderr, "incr len: %d\n", len);
+
+			memcpy(option, buf, n);
+		}
+
+		char **r = stretch((char**)options, len);
+
+		for (i = 0; i < len; i++) {
+			fprintf(stderr, "v: %s\n", r[i]);
+		}
+	}
+
+/*
+loop:
+	for {
+		strs := stretch(r, ws.ws_col)
+
+		for (i = 0; i < len; i++){
+			color = i+offset == sel && i+offset < len;
+			draw_line(display, strs[i], color);
+		}
+
+		// cursor up n-times, cursor to column n
+		dprintf(ttyfd, "\x1b[%dF\x1b[%dG", MIN(len, ws.ws_row), 1);
+
+
+		case item, ok := <-rows:
+			if !ok {
+				rows = nil
+				continue
+			}
+			id := item.String()
+
+			if i, ok := indicies[item.String()]; ok {
+				items[i] = item
+			} else {
+				indicies[id] = len
+				items = append(items, item)
+			}
+			continue
+		case key, ok = <-keys:
+			if !ok {
+				break loop
+			}
+		case <-winch:
+			ws.ws_col, ws.ws_row, err = dimensions(tty)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "menu err: %+v\n", err)
+				return
+			}
+			continue
+		case <-ctx.Done():
+			break loop
+		}
+
+		switch string(key) {
+		case "\x1b\n", "\x1b\r":
+			// cursor to start of line, clear rest of line
+			var item string
+			if sel < 0 || sel >= len-1 {
+				item = string(input)
+			} else {
+				item = items[sel].String()
+			}
+			select {
+			case <-ctx.Done():
+			case ch <- item:
+			}
+			fmt.Fprintf(display, "\x1b[G\x1b[J")
+		case string(0x40 ^ 'D'), "\x1b":
+			break loop
+		case "\r":
+			var item string
+			if sel < 0 || sel >= len {
+				item = string(input)
+			} else {
+				item = items[sel].String()
+			}
+			select {
+			case <-ctx.Done():
+			case ch <- item:
+			}
+			break loop
+		case string(0x40 ^ 'J'), string(0x40 ^ 'N'), "\x1bj", "\x1bn":
+			sel++
+			sel = MIN(sel, len-1)
+			if sel >= offset+MIN(len, ws.ws_row) {
+				offset++
+			}
+			offset = MIN(offset, len-MIN(len, ws.ws_row))
+			offset = Max(offset, 0)
+		case string(0x40 ^ 'K'), "\x1bk", string(0x40 ^ 'P'), "\x1bp":
+			if sel-1 <= 0 {
+				sel = 0
+				break
+			}
+			sel--
+			if offset <= 0 {
+				break
+			}
+			if sel <= offset {
+				offset--
+			}
+
+		case string(0x40 ^ 'G'), "\x1bg":
+			offset = 0
+			sel = 0
+		case "\x1bG":
+			offset = Max(0, len-MIN(len, ws.ws_row))
+			sel = Max(len-1, 0)
+		case string(0x40 ^ '?'), string(0x40 ^ 'H'):
+			if len(input) == 0 {
+				break
+			}
+			input = (input)[:len(input)-1]
+			// backspace, space, backspace
+			fmt.Fprintf(display, "\x08 \x08")
+		default:
+			for _, r := range string(key) {
+				if strconv.IsGraphic(r) {
+					display.Write([]byte(string(r)))
+					input = append(input, r)
+				}
+			}
+		}
+	}
+
+	fmt.Fprintf(display, "\x1b[G\x1b[J")
+	display.Flush()
+	*/
+}
+
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
 	int i, n, fd, tty;
@@ -324,8 +563,6 @@ int main(/*int argc, char *argv[]*/) {
 		fprintf(stderr, "LAMBDA_API_KEY missing\n");
 		return 1;
 	}
-
-	fprintf(stderr, "KEY %s\n", key);
 
 	if ((tty = open("/dev/tty", O_RDONLY)) == -1) {
 		perror("failed to open tty");
@@ -350,31 +587,50 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	fprintf(stderr, "got width & height: %d, %d\n", ws.ws_col, ws.ws_row);
-
 	n = fetch_instances(&fd);
-	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
 
-/*
+	/*
 	n = fetch_ssh_keys(&fd);
 	printf("fetch instances %d %d\n", n, fd);
 	copy(1, fd);
 	*/
 
 	const char *items[] = {
-		"File\tCamel!\tABC",
-		"Cockboy yeah yeah \tCut\tABC",
-		"View\tZoom In\tABC",
-		"Help\tAbout\tABC"
+		"File\tCamel!\tABC\n",
+		"Cockboy yeah yeah \tCut\tABC\n",
+		"View\tZoom In\tABC\n",
+		"Help\tAbout\tABC\n"
 	};
 
-	printf("stretching items\n");
-	char **r = stretch((char**)items, LENGTH(items), ws.ws_col);
-	printf("done\n");
 
-	for (i = 0; i < LENGTH(items); i++) {
-		printf("%d(%d):\n%s\n", i, strlen(r[i]), r[i]);
+	int pp[2];
+	if (pipe(pp) == -1) {
+		perror("main pipe");
+		exit(1);
+	}
+
+	switch (n = fork()) {
+	case -1:
+		perror("fork");
+		exit(1);
+		break;
+	case 0:
+		close(pp[1]);
+		menu(pp[0], 0, 0, 0);
+		return 0;
+	default:
+		close(pp[0]);
+		for (i = 0; i < LENGTH(items); i++) {
+			n = write(pp[1], items[i], strlen(items[i]));
+			if (n == -1) {
+				perror("main write to menu");
+				exit(1);
+			}
+			fprintf(stderr, "wrote %d of %d\n", n, strlen(items[i]));
+		}
+		close(pp[1]);
+		break;
 	}
 
 	for (;;) {
