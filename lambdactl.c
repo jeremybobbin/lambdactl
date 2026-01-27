@@ -59,38 +59,56 @@ int draw_line(int fd, char *text, int color) {
 	}
 }
 
+
+// read tsv into options array
 int read_tsv(int fd, char ***options, int *len) {
-	static int i, n;
-	static char buf[2048];
+	int m;
+	static int i, j, n;
+	static char buf[2048]; // TODO - set to 10 & fix
+	char *option;
 
 	if (options == NULL) {
 		fprintf(stderr, "read_tsv failure\n");
 		exit(1);
 	}
 
-	if ((n = read(optionfd, &buf[i], sizeof(buf)-i)) == -1) {
+	fprintf(stderr, "read tsv\n");
+
+	if ((m = read(fd, &buf[i], sizeof(buf)-i)) == -1) {
 		perror("read in read_tsv");
-		break;
+		return -1;
 	}
 
-	for (; i < n; n++) {
+	if (m == 0) {
+		return 0;
+	}
+
+	n += m;
+
+	for (i = 0, j = 0; i < n; i++) {
 		if (buf[i] == '\n') {
-			if (((*options)[*len] = option = malloc(n)) == NULL) {
+			fprintf(stderr, "mallocing %d\n", i-j);
+			if ((option = malloc(i-j)) == NULL) {
 				perror("malloc option");
 				exit(1);
 			}
-			(*len)++;
-		}
-		switch (buf[i]) {
-		case '\n':
+			memcpy(option, &buf[j], i-j);
 			if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
 				perror("malloc options");
 				break;
 			}
+			fprintf(stderr, "set %d to %s\n", *len, option);
+			(*options)[*len] = option;
+			(*len)++;
+			j = i+1;
 		}
 	}
+
 	memmove(buf, &buf[i], n-i);
+	n -= i;
 	i = 0;
+
+	return 1;
 }
 
 // items - array of tsv
@@ -102,6 +120,7 @@ char **stretch(char **items, int len) {
 	for (i = 0; i < len; i++) {
 		m = 1;
 		str = items[i];
+		//fprintf(stderr, "stretching: %s\n", items[i]);
 		for (j = 0; str[j]; j++) {
 			if (str[j] == '\t') {
 				m++;
@@ -363,7 +382,9 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		fprintf(stderr, "loop\n");
 		//FD_SET(ttyfd, &rs);
 		//FD_SET(ttyfd, &ws);
-		FD_SET(optionfd, &rs);
+		if (optionfd >= 0) {
+			FD_SET(optionfd, &rs);
+		}
 		//FD_SET(intrfd, &rs);
 
 		fprintf(stderr, "selecting\n", n);
@@ -397,40 +418,21 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		}
 
 		if (FD_ISSET(optionfd, &rs)) {
-			fprintf(stderr, "optionfd set - realloc: %d %d\n", len, options);
-			if ((options = realloc(options, sizeof(*options)*(len+1))) == NULL) {
-				perror("malloc options");
-				break;
+			fprintf(stderr, "option fd ready!\n", len);
+			if (read_tsv(optionfd, &options, &len) == 0) {
+				fprintf(stderr, "readtsv returned 0\n");
+				optionfd = -1;
 			}
-
-			if ((n = read(optionfd, buf, sizeof(buf))) == -1) {
-				perror("read stdin");
-				break;
-			}
-
-			for (i = 0; i < n; n++) {
-				if (i == 0 || buf[i] == '\n') {
-					if ((options[len] = option = malloc(n)) == NULL) {
-						perror("malloc option");
-						exit(1);
-					}
-					len++;
-				}
-				switch (buf[i]) {
-				case '\n':
-				}
-			}
-
-			len++;
-			fprintf(stderr, "incr len: %d\n", len);
-
-			memcpy(option, buf, n);
+			fprintf(stderr, "post read tsv len: %d\n", len);
 		}
 
+		fprintf(stderr, "stretch\n");
 		char **r = stretch((char**)options, len);
 
+		
+		fprintf(stderr, "uh %d\n", len);
 		for (i = 0; i < len; i++) {
-			fprintf(stderr, "v: %s\n", r[i]);
+			fprintf(stderr, "%s\n", r[i]);
 		}
 	}
 
@@ -621,6 +623,7 @@ int main(/*int argc, char *argv[]*/) {
 		return 0;
 	default:
 		close(pp[0]);
+		fprintf(stderr, "WRITING ITEMS\n");
 		for (i = 0; i < LENGTH(items); i++) {
 			n = write(pp[1], items[i], strlen(items[i]));
 			if (n == -1) {
