@@ -357,7 +357,7 @@ int copy(int a, int b) {
 	return m;
 }
 
-int menu(int optionfd, int out, int ttyfd, int intrfd) {
+int menu(int optionfd, int out, int ttyfd) {
 	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
 	char buf[2048], **options = NULL, *option;
 	fd_set rs, ws;
@@ -366,7 +366,6 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 	maxfd = MAX(maxfd, optionfd);
 	maxfd = MAX(maxfd, out);
 	maxfd = MAX(maxfd, ttyfd);
-	maxfd = MAX(maxfd, intrfd);
 
 	// default colors
 	write(ttyfd, "\x1b[0m", sizeof("\x1b[0m")-1);
@@ -375,27 +374,22 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		FD_ZERO(&rs);
 		FD_ZERO(&ws);
 
-		//FD_SET(ttyfd, &rs);
-		//FD_SET(ttyfd, &ws);
+		FD_SET(ttyfd, &rs);
+
 		if (optionfd >= 0) {
 			FD_SET(optionfd, &rs);
 		}
-		//FD_SET(intrfd, &rs);
 
-		fprintf(stderr, "selecting from max %d\n", maxfd);
 		if ((n = select(maxfd+1, &rs, &ws, NULL, NULL)) == -1) {
 			perror("select");
 			return 1;
 		}
 
 		if (FD_ISSET(ttyfd, &rs)) {
-			fprintf(stderr, "tty\n");
 			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
 				perror("read stdin");
 				break;
 			}
-
-			fprintf(stderr, "Buf 0 %c\n", buf[0]);
 
 			switch (buf[0]) {
 			case 0x40 ^ 'J': case 0x40 ^ 'N':
@@ -406,19 +400,24 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 				}
 				offset = MIN(offset, len-MIN(len, win.ws_row));
 				offset = MAX(offset, 0);
-			}
-			break;
-		}
-
-		if (FD_ISSET(intrfd, &rs)) {
-			if ((n = read(intrfd, buf, sizeof(buf))) == -1) {
-				perror("read intrfd in menu");
 				break;
-			}
 
-			switch (buf[0]) {
+			case 0x40 ^ 'K': case 0x40 ^ 'P':
+				if (sel-1 <= 0) {
+					sel = 0;
+					break;
+				}
+				sel--;
+				if (offset <= 0) {
+					break;
+				}
+				if (sel <= offset) {
+					offset--;
+				}
+
+
+
 			}
-			break;
 		}
 
 		if (FD_ISSET(optionfd, &rs)) {
@@ -429,8 +428,6 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 
 		char **r = stretch((char**)options, len);
 
-/*
-		
 		for (i = 0; i < len; i++) {
 			switch (i == sel) {
 			case 0: // default
@@ -444,127 +441,8 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		}
 
 		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
-		*/
 	}
 
-/*
-loop:
-	for {
-		strs := stretch(r, win.ws_col)
-
-		for (i = 0; i < len; i++){
-			color = i+offset == sel && i+offset < len;
-			draw_line(display, strs[i], color);
-		}
-
-		// cursor up n-times, cursor to column n
-		dprintf(ttyfd, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
-
-
-		case item, ok := <-rows:
-			if !ok {
-				rows = nil
-				continue
-			}
-			id := item.String()
-
-			if i, ok := indicies[item.String()]; ok {
-				items[i] = item
-			} else {
-				indicies[id] = len
-				items = append(items, item)
-			}
-			continue
-		case key, ok = <-keys:
-			if !ok {
-				break loop
-			}
-		case <-winch:
-			win.ws_col, win.ws_row, err = dimensions(tty)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "menu err: %+v\n", err)
-				return
-			}
-			continue
-		case <-ctx.Done():
-			break loop
-		}
-
-		switch string(key) {
-		case "\x1b\n", "\x1b\r":
-			// cursor to start of line, clear rest of line
-			var item string
-			if sel < 0 || sel >= len-1 {
-				item = string(input)
-			} else {
-				item = items[sel].String()
-			}
-			select {
-			case <-ctx.Done():
-			case ch <- item:
-			}
-			fmt.Fprintf(display, "\x1b[G\x1b[J")
-		case string(0x40 ^ 'D'), "\x1b":
-			break loop
-		case "\r":
-			var item string
-			if sel < 0 || sel >= len {
-				item = string(input)
-			} else {
-				item = items[sel].String()
-			}
-			select {
-			case <-ctx.Done():
-			case ch <- item:
-			}
-			break loop
-		case string(0x40 ^ 'J'), string(0x40 ^ 'N'), "\x1bj", "\x1bn":
-			sel++
-			sel = MIN(sel, len-1)
-			if sel >= offset+MIN(len, win.ws_row) {
-				offset++
-			}
-			offset = MIN(offset, len-MIN(len, win.ws_row))
-			offset = Max(offset, 0)
-		case string(0x40 ^ 'K'), "\x1bk", string(0x40 ^ 'P'), "\x1bp":
-			if sel-1 <= 0 {
-				sel = 0
-				break
-			}
-			sel--
-			if offset <= 0 {
-				break
-			}
-			if sel <= offset {
-				offset--
-			}
-
-		case string(0x40 ^ 'G'), "\x1bg":
-			offset = 0
-			sel = 0
-		case "\x1bG":
-			offset = Max(0, len-MIN(len, win.ws_row))
-			sel = Max(len-1, 0)
-		case string(0x40 ^ '?'), string(0x40 ^ 'H'):
-			if len(input) == 0 {
-				break
-			}
-			input = (input)[:len(input)-1]
-			// backspace, space, backspace
-			fmt.Fprintf(display, "\x08 \x08")
-		default:
-			for _, r := range string(key) {
-				if strconv.IsGraphic(r) {
-					display.Write([]byte(string(r)))
-					input = append(input, r)
-				}
-			}
-		}
-	}
-
-	fmt.Fprintf(display, "\x1b[G\x1b[J")
-	display.Flush()
-	*/
 }
 
 int main(/*int argc, char *argv[]*/) {
@@ -610,10 +488,10 @@ int main(/*int argc, char *argv[]*/) {
 	*/
 
 	const char *items[] = {
-		"File\tCamel!\tABC\n",
-		"Cockboy yeah yeah \tCut\tABC\n",
-		"View\tZoom In\tABC\n",
-		"Help\tAbout\tABC\n"
+		"create\n",
+		"instances\n",
+		"ssh\n",
+		"terminate\n"
 	};
 
 
@@ -629,10 +507,6 @@ int main(/*int argc, char *argv[]*/) {
 		exit(1);
 		break;
 	case 0:
-		close(pp[1]);
-		menu(pp[0], 0, 0, 0);
-		return 0;
-	default:
 		close(pp[0]);
 		for (i = 0; i < LENGTH(items); i++) {
 			n = write(pp[1], items[i], strlen(items[i]));
@@ -642,43 +516,18 @@ int main(/*int argc, char *argv[]*/) {
 			}
 		}
 		close(pp[1]);
+		return 0;
+	default:
+		close(pp[1]);
+		menu(pp[0], 0, 0);
 		break;
 	}
-
-	for (;;) {
-		FD_ZERO(&rs);
-		FD_SET(0, &rs);
-
-		if ((n = select(1, &rs, NULL, NULL, NULL)) == -1) {
-			perror("select");
-			return 1;
-		}
-
-		if (FD_ISSET(0, &rs)) {
-			if ((n = read(0, &buf[0], sizeof(buf))) == -1) {
-				perror("read stdin");
-				break;
-			}
-
-			switch (buf[0]) {
-			case 'q': case CONTROL('D'): case CONTROL('['):
-				break;
-			case '\r':
-				continue;
-			default:
-				continue;
-			}
-			break;
-		}
-	}
-
 
 	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
 		perror("failed to teardown tty");
 		return 1;
 	}
 
-	//match_ssh_key("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2xqx6t8MBfheMevVi/n4XlA4T6hJgmrqgpH4W2epmc4tGPoE2EQjmk5QnXLc1jsYoxreHaVFCFIiz5y8XkxgPJxf5hiq4s42/g1xA3w/P4MVg/frDpa4rtSalXHXWJ9Piymcykeyeb8hlhcCU5RVqy1ftCjNHycKLWvGpdPDnU7Q/GVhR5qbDLwmDxwb0U85C9LGolnY6uiYLR4CfBNsDaZiRN1Re7IIzWLmU6MGNpewEO680IqoOtQyikI/NEyWdKqQpO4TAyNl994obBu8ucsq9BahPyCzHnCf37EVUB8Lz632ZRLp6RkG0KdmzFF4gJ+ANLwoE0zWKaBoclSKgEsxzMwLBO/AJ0HhsCfglFWDGr/kGxyrg9T1ERzYEL3882aHVnQMJ8A3jSxadVev9xUEBTRz4cCQVMjWieOz1qUj3sZHMMoxK80VgBEOxODsZ2ikIpDioamlzRSOhn0J9zZ7eGUkKlsJxbTPQtkxguFiJl9mg4Ym6P7mhZv9/HLc= jer@Amphibian\n");
 	return 0;
 }
 
