@@ -72,8 +72,6 @@ int read_tsv(int fd, char ***options, int *len) {
 		exit(1);
 	}
 
-	fprintf(stderr, "read tsv\n");
-
 	if ((m = read(fd, &buf[i], sizeof(buf)-i)) == -1) {
 		perror("read in read_tsv");
 		return -1;
@@ -87,7 +85,6 @@ int read_tsv(int fd, char ***options, int *len) {
 
 	for (i = 0, j = 0; i < n; i++) {
 		if (buf[i] == '\n') {
-			fprintf(stderr, "mallocing %d\n", i-j);
 			if ((option = malloc(i-j)) == NULL) {
 				perror("malloc option");
 				exit(1);
@@ -97,7 +94,6 @@ int read_tsv(int fd, char ***options, int *len) {
 				perror("malloc options");
 				break;
 			}
-			fprintf(stderr, "set %d to %s\n", *len, option);
 			(*options)[*len] = option;
 			(*len)++;
 			j = i+1;
@@ -379,7 +375,6 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		FD_ZERO(&rs);
 		FD_ZERO(&ws);
 
-		fprintf(stderr, "loop\n");
 		//FD_SET(ttyfd, &rs);
 		//FD_SET(ttyfd, &ws);
 		if (optionfd >= 0) {
@@ -387,13 +382,10 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		}
 		//FD_SET(intrfd, &rs);
 
-		fprintf(stderr, "selecting\n", n);
 		if ((n = select(maxfd+1, &rs, &ws, NULL, NULL)) == -1) {
 			perror("select");
 			return 1;
 		}
-
-		fprintf(stderr, "select %d\n", n);
 
 		if (FD_ISSET(ttyfd, &rs)) {
 			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
@@ -418,19 +410,14 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		}
 
 		if (FD_ISSET(optionfd, &rs)) {
-			fprintf(stderr, "option fd ready!\n", len);
 			if (read_tsv(optionfd, &options, &len) == 0) {
-				fprintf(stderr, "readtsv returned 0\n");
 				optionfd = -1;
 			}
-			fprintf(stderr, "post read tsv len: %d\n", len);
 		}
 
-		fprintf(stderr, "stretch\n");
 		char **r = stretch((char**)options, len);
 
 		
-		fprintf(stderr, "uh %d\n", len);
 		for (i = 0; i < len; i++) {
 			fprintf(stderr, "%s\n", r[i]);
 		}
@@ -623,14 +610,12 @@ int main(/*int argc, char *argv[]*/) {
 		return 0;
 	default:
 		close(pp[0]);
-		fprintf(stderr, "WRITING ITEMS\n");
 		for (i = 0; i < LENGTH(items); i++) {
 			n = write(pp[1], items[i], strlen(items[i]));
 			if (n == -1) {
 				perror("main write to menu");
 				exit(1);
 			}
-			fprintf(stderr, "wrote %d of %d\n", n, strlen(items[i]));
 		}
 		close(pp[1]);
 		break;
@@ -657,7 +642,6 @@ int main(/*int argc, char *argv[]*/) {
 			case '\r':
 				continue;
 			default:
-				fprintf(stderr, "read %d: '%.*s'\n", n, n, buf);
 				continue;
 			}
 			break;
