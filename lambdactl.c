@@ -17,19 +17,19 @@
 #define LENGTH(x)  ((int)(sizeof (x) / sizeof *(x)))
 
 static struct termios term[2];
-static struct winsize ws;
+static struct winsize win;
 char *key;
 
 int draw_line(int fd, char *text, int color) {
 	char *buf;
 	int i, j, n;
 
-	if ((buf = malloc((ws.ws_col-PADDING))) == NULL) {
+	if ((buf = malloc((win.ws_col-PADDING))) == NULL) {
 		perror("malloc");
 		exit(1);
 	}
 
-	for (i = 0, j = 0, n = 0; i < (ws.ws_col-PADDING); i++) {
+	for (i = 0, j = 0, n = 0; i < (win.ws_col-PADDING); i++) {
 		if (n > 0) {
 			n--;
 			buf[i] = ' ';
@@ -152,7 +152,7 @@ char **stretch(char **items, int len) {
 		}
 	}
 
-	remaining = ws.ws_col - PADDING;
+	remaining = win.ws_col - PADDING;
 	for (i = 0; i < max; i++) {
 		remaining -= widths[i];
 	}
@@ -168,7 +168,7 @@ char **stretch(char **items, int len) {
 	}
 
 	for (i = 0; i < len; i++) {
-		if ((rows[i] = malloc(sizeof(**rows)*ws.ws_col)) == NULL) {
+		if ((rows[i] = malloc(sizeof(**rows)*win.ws_col)) == NULL) {
 			return NULL;
 		}
 
@@ -421,12 +421,14 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		for (i = 0; i < len; i++) {
 			fprintf(stderr, "%s\n", r[i]);
 		}
+
+		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
 	}
 
 /*
 loop:
 	for {
-		strs := stretch(r, ws.ws_col)
+		strs := stretch(r, win.ws_col)
 
 		for (i = 0; i < len; i++){
 			color = i+offset == sel && i+offset < len;
@@ -434,7 +436,7 @@ loop:
 		}
 
 		// cursor up n-times, cursor to column n
-		dprintf(ttyfd, "\x1b[%dF\x1b[%dG", MIN(len, ws.ws_row), 1);
+		dprintf(ttyfd, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
 
 
 		case item, ok := <-rows:
@@ -456,7 +458,7 @@ loop:
 				break loop
 			}
 		case <-winch:
-			ws.ws_col, ws.ws_row, err = dimensions(tty)
+			win.ws_col, win.ws_row, err = dimensions(tty)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "menu err: %+v\n", err)
 				return
@@ -497,10 +499,10 @@ loop:
 		case string(0x40 ^ 'J'), string(0x40 ^ 'N'), "\x1bj", "\x1bn":
 			sel++
 			sel = MIN(sel, len-1)
-			if sel >= offset+MIN(len, ws.ws_row) {
+			if sel >= offset+MIN(len, win.ws_row) {
 				offset++
 			}
-			offset = MIN(offset, len-MIN(len, ws.ws_row))
+			offset = MIN(offset, len-MIN(len, win.ws_row))
 			offset = Max(offset, 0)
 		case string(0x40 ^ 'K'), "\x1bk", string(0x40 ^ 'P'), "\x1bp":
 			if sel-1 <= 0 {
@@ -519,7 +521,7 @@ loop:
 			offset = 0
 			sel = 0
 		case "\x1bG":
-			offset = Max(0, len-MIN(len, ws.ws_row))
+			offset = Max(0, len-MIN(len, win.ws_row))
 			sel = Max(len-1, 0)
 		case string(0x40 ^ '?'), string(0x40 ^ 'H'):
 			if len(input) == 0 {
@@ -571,7 +573,7 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	if (ioctl(tty, TIOCGWINSZ, &ws) < 0) {
+	if (ioctl(tty, TIOCGWINSZ, &win) < 0) {
 		perror("failed to get tty size");
 		return 1;
 	}
