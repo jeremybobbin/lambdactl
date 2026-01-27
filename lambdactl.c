@@ -358,7 +358,7 @@ int copy(int a, int b) {
 }
 
 int menu(int optionfd, int out, int ttyfd, int intrfd) {
-	int i, n, sel = 0, offset, color, len = 0, maxfd = 0;
+	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
 	char buf[2048], **options = NULL, *option;
 	fd_set rs, ws;
 	offset = 0;
@@ -382,18 +382,30 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		}
 		//FD_SET(intrfd, &rs);
 
+		fprintf(stderr, "selecting from max %d\n", maxfd);
 		if ((n = select(maxfd+1, &rs, &ws, NULL, NULL)) == -1) {
 			perror("select");
 			return 1;
 		}
 
 		if (FD_ISSET(ttyfd, &rs)) {
+			fprintf(stderr, "tty\n");
 			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
 				perror("read stdin");
 				break;
 			}
 
+			fprintf(stderr, "Buf 0 %c\n", buf[0]);
+
 			switch (buf[0]) {
+			case 0x40 ^ 'J': case 0x40 ^ 'N':
+				sel++;
+				sel = MIN(sel, len-1);
+				if (sel >= offset+MIN(len, win.ws_row)) {
+					offset++;
+				}
+				offset = MIN(offset, len-MIN(len, win.ws_row));
+				offset = MAX(offset, 0);
 			}
 			break;
 		}
@@ -417,6 +429,7 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 
 		char **r = stretch((char**)options, len);
 
+/*
 		
 		for (i = 0; i < len; i++) {
 			switch (i == sel) {
@@ -431,6 +444,7 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 		}
 
 		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
+		*/
 	}
 
 /*
