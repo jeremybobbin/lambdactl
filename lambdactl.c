@@ -358,7 +358,7 @@ int copy(int a, int b) {
 }
 
 int menu(int optionfd, int out, int ttyfd, int intrfd) {
-	int i, n, sel, offset, color, len = 0, maxfd = 0;
+	int i, n, sel = 0, offset, color, len = 0, maxfd = 0;
 	char buf[2048], **options = NULL, *option;
 	fd_set rs, ws;
 	offset = 0;
@@ -419,7 +419,15 @@ int menu(int optionfd, int out, int ttyfd, int intrfd) {
 
 		
 		for (i = 0; i < len; i++) {
-			fprintf(stderr, "%s\n", r[i]);
+			switch (i == sel) {
+			case 0: // default
+				fprintf(stderr, "\n\x1b[2K %s ", r[i]);
+				break;
+			default: // reverse
+				// cursor column n
+				fprintf(stderr, "\n\x1b[2K\x1b[7m %s \x1b[0m", r[i]);
+				break;
+			}
 		}
 
 		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
