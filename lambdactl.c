@@ -531,16 +531,13 @@ int main(/*int argc, char *argv[]*/) {
 		}
 
 		n = read(out_pipe[0], buf, sizeof(buf));
-		fprintf(stderr, "read %d %.*s\n", n, n, buf);
-
 		close(item_pipe[1]);
 		close(out_pipe[0]);
 
-		if (!strncmp(buf, "create", n)) {
-			fprintf(stderr, "CREATE\n");
-		} else if (!strncmp(buf, "instances", n)) {
-		} else if (!strncmp(buf, "ssh", n)) {
-		} else if (!strncmp(buf, "terminate", n)) {
+		if (strstr(buf, "create")) {
+		} else if (strstr(buf, "instances")) {
+		} else if (strstr(buf, "ssh")) {
+		} else if (strstr(buf, "terminate")) {
 		}
 	}
 
