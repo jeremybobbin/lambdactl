@@ -1,0 +1,3 @@
+#!/bin/sh
+curl https://cloud.lambda.ai/api/v1/instance-types -s -u "$LAMBDA_API_KEY" |
+	jq -r '.data | to_entries[] | .key'

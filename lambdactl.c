@@ -309,6 +309,34 @@ int fetch_instances(int *fd) {
 	}
 }
 
+int fetch_instance_types(int *fd) {
+	int n, pp[2];
+
+	if (fd == NULL) {
+		errno = EINVAL;
+	}
+
+	if (pipe(pp) == -1) {
+		return -1;
+	}
+
+	*fd = pp[0];
+
+	switch ((n = fork())) {
+	case -1:
+		close(pp[0]);
+		close(pp[1]);
+		return -1;
+	case 0:
+		dup2(pp[1], 1);
+		close(pp[0]);
+		return execl("bin/instances/types", "types");
+	default:
+		close(pp[1]);
+		return n;
+	}
+}
+
 int fetch_ssh_keys(int *fd) {
 	int n, pp[2];
 
