@@ -357,14 +357,13 @@ int copy(int a, int b) {
 	return m;
 }
 
-int menu(int optionfd, int out, int ttyfd) {
+int menu(int optionfd, int outfd, int ttyfd) {
 	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
 	char buf[2048], **options = NULL, *option;
 	fd_set rs, ws;
 	offset = 0;
 
 	maxfd = MAX(maxfd, optionfd);
-	maxfd = MAX(maxfd, out);
 	maxfd = MAX(maxfd, ttyfd);
 
 	// default colors
@@ -384,6 +383,15 @@ int menu(int optionfd, int out, int ttyfd) {
 			perror("select");
 			return 1;
 		}
+
+		if (FD_ISSET(optionfd, &rs)) {
+			if (read_tsv(optionfd, &options, &len) == 0) {
+				close(outfd);
+				return 1;
+			}
+		}
+
+		char **r = stretch((char**)options, len);
 
 		if (FD_ISSET(ttyfd, &rs)) {
 			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
@@ -415,18 +423,10 @@ int menu(int optionfd, int out, int ttyfd) {
 					offset--;
 				}
 
-
-
+			case '\r':
+				write(outfd, r[sel], strlen(r[sel]));
 			}
 		}
-
-		if (FD_ISSET(optionfd, &rs)) {
-			if (read_tsv(optionfd, &options, &len) == 0) {
-				optionfd = -1;
-			}
-		}
-
-		char **r = stretch((char**)options, len);
 
 		for (i = 0; i < len; i++) {
 			switch (i == sel) {
@@ -495,32 +495,53 @@ int main(/*int argc, char *argv[]*/) {
 	};
 
 
-	int pp[2];
-	if (pipe(pp) == -1) {
-		perror("main pipe");
-		exit(1);
-	}
+	int item_pipe[2], out_pipe[2];
 
-	switch (n = fork()) {
-	case -1:
-		perror("fork");
-		exit(1);
-		break;
-	case 0:
-		close(pp[0]);
-		for (i = 0; i < LENGTH(items); i++) {
-			n = write(pp[1], items[i], strlen(items[i]));
-			if (n == -1) {
-				perror("main write to menu");
-				exit(1);
-			}
+	for (;;) {
+		if (pipe(item_pipe) == -1) {
+			perror("item pipe");
+			exit(1);
 		}
-		close(pp[1]);
-		return 0;
-	default:
-		close(pp[1]);
-		menu(pp[0], 0, 0);
-		break;
+
+		if (pipe(out_pipe) == -1) {
+			perror("out pipe");
+			exit(1);
+		}
+
+		switch (n = fork()) {
+		case -1:
+			perror("fork");
+			exit(1);
+			break;
+		case 0:
+			close(item_pipe[1]);
+			menu(item_pipe[0], out_pipe[1], 0);
+			return 0;
+		default:
+			close(item_pipe[0]);
+			close(out_pipe[1]);
+			for (i = 0; i < LENGTH(items); i++) {
+				n = write(item_pipe[1], items[i], strlen(items[i]));
+				if (n == -1) {
+					perror("main write to menu");
+					exit(1);
+				}
+			}
+			break;
+		}
+
+		n = read(out_pipe[0], buf, sizeof(buf));
+		fprintf(stderr, "read %d %.*s\n", n, n, buf);
+
+		close(item_pipe[1]);
+		close(out_pipe[0]);
+
+		if (!strncmp(buf, "create", n)) {
+			fprintf(stderr, "CREATE\n");
+		} else if (!strncmp(buf, "instances", n)) {
+		} else if (!strncmp(buf, "ssh", n)) {
+		} else if (!strncmp(buf, "terminate", n)) {
+		}
 	}
 
 	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
