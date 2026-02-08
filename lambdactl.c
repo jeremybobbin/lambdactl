@@ -85,11 +85,13 @@ int read_tsv(int fd, char ***options, int *len) {
 
 	for (i = 0, j = 0; i < n; i++) {
 		if (buf[i] == '\n') {
-			if ((option = malloc(i-j)) == NULL) {
+			if ((option = malloc(i-j+1)) == NULL) {
 				perror("malloc option");
 				exit(1);
 			}
 			memcpy(option, &buf[j], i-j);
+			option[i-j] = '\0';
+
 			if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
 				perror("malloc options");
 				break;
@@ -309,34 +311,6 @@ int fetch_instances(int *fd) {
 	}
 }
 
-int fetch_instance_types(int *fd) {
-	int n, pp[2];
-
-	if (fd == NULL) {
-		errno = EINVAL;
-	}
-
-	if (pipe(pp) == -1) {
-		return -1;
-	}
-
-	*fd = pp[0];
-
-	switch ((n = fork())) {
-	case -1:
-		close(pp[0]);
-		close(pp[1]);
-		return -1;
-	case 0:
-		dup2(pp[1], 1);
-		close(pp[0]);
-		return execl("bin/instances-types", "instance-types");
-	default:
-		close(pp[1]);
-		return n;
-	}
-}
-
 int fetch_ssh_keys(int *fd) {
 	int n, pp[2];
 
@@ -469,6 +443,7 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 			if (read_tsv(item_pipe[0], &options, &len) == 0) {
 				item_pipe[0] = -1;
 			}
+			fflush(stdout);
 		}
 
 		char **r = stretch((char**)options, len);
@@ -607,10 +582,22 @@ int main(/*int argc, char *argv[]*/) {
 			perror("menu");
 		}
 
-
-
 		if (strstr(buf, "create")) {
-			printf("create");
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return -1;
+			case 0:
+				dup2(optionfd, 1);
+				if (execl("bin/instance-types", "bin/instance-types") == 0) {
+					exit(0);
+				} else {
+					perror("exec bin/instance-types");
+					exit(1);
+				}
+			default:
+				break;
+			}
 		} else if (strstr(buf, "instances")) {
 		} else if (strstr(buf, "ssh")) {
 		} else if (strstr(buf, "terminate")) {
