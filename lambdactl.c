@@ -467,8 +467,7 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 
 		if (FD_ISSET(item_pipe[0], &rs)) {
 			if (read_tsv(item_pipe[0], &options, &len) == 0) {
-				close(out_pipe[1]);
-				exit(1);
+				item_pipe[0] = -1;
 			}
 		}
 
@@ -505,6 +504,7 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 				if (sel <= offset) {
 					offset--;
 				}
+				break;
 
 			case '\r':
 				write(out_pipe[1], r[sel], strlen(r[sel]));
@@ -523,14 +523,13 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 			}
 		}
 
-		fflush(stdout);
 		if (MIN(len, win.ws_row)) {
-			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
+			// cursor up n-times, cursor to column n
+			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), len);
 		}
 
 		if (FD_ISSET(ctl_pipe[0], &rs)) {
 			if (read(ctl_pipe[0], buf, sizeof(buf)) == 0) {
-				fprintf(stderr, "menu: control pipe closed\n");
 				break;
 			} else {
 				fprintf(stderr, "menu: unimplemented\n");
@@ -539,6 +538,8 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 		}
 
 	}
+	// erase to end of screen
+	fprintf(stderr, "\x1b[G\x1b[J");
 
 	exit(0);
 
@@ -621,11 +622,12 @@ int main(/*int argc, char *argv[]*/) {
 					exit(1);
 				}
 			}
+			close(optionfd);
 		}
 
 		n = read(outfd, buf, sizeof(buf));
-		close(optionfd);
 		close(outfd);
+		close(ctlfd);
 	}
 
 	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
