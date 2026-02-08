@@ -302,7 +302,7 @@ int fetch_instances(int *fd) {
 	case 0:
 		dup2(pp[1], 1);
 		close(pp[0]);
-		return execl("bin/instances/get", "get");
+		return execl("bin/instances", "instances");
 	default:
 		close(pp[1]);
 		return n;
@@ -330,7 +330,7 @@ int fetch_instance_types(int *fd) {
 	case 0:
 		dup2(pp[1], 1);
 		close(pp[0]);
-		return execl("bin/instances/types", "types");
+		return execl("bin/instances-types", "instance-types");
 	default:
 		close(pp[1]);
 		return n;
