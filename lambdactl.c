@@ -145,7 +145,7 @@ char **stretch(char **items, int len) {
 
 			if (str[n] == '\0') {
 				break;
-			} 
+			}
 
 			str += n + 1;
 			j++;
@@ -385,13 +385,54 @@ int copy(int a, int b) {
 	return m;
 }
 
-int menu(int optionfd, int outfd, int ttyfd) {
+
+/* menu
+ * forks, pipes
+ * provides a writable optionfd pipe
+ * provides a readable outfd
+ * returns -1 if pipes or fork fail
+ * subprocess exits on error
+ */
+int menu(int ttyfd, int *optionfd, int *outfd) {
+	int item_pipe[2], out_pipe[2];
 	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
 	char buf[2048], **options = NULL, *option;
 	fd_set rs, ws;
 	offset = 0;
 
-	maxfd = MAX(maxfd, optionfd);
+	if (optionfd == NULL || outfd == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (pipe(item_pipe) == -1) {
+		return -1;
+	}
+
+	if (pipe(out_pipe) == -1) {
+		return -1;
+	}
+
+	switch (n = fork()) {
+	case -1:
+		perror("fork");
+		exit(1);
+		break;
+	case 0:
+		close(item_pipe[1]);
+		close(out_pipe[0]);
+		break;
+	default:
+		close(item_pipe[0]);
+		close(out_pipe[1]);
+		*optionfd = item_pipe[1];
+		*outfd = out_pipe[0];
+		return n;
+	}
+
+
+
+	maxfd = MAX(maxfd, item_pipe[0]);
 	maxfd = MAX(maxfd, ttyfd);
 
 	// default colors
@@ -403,19 +444,19 @@ int menu(int optionfd, int outfd, int ttyfd) {
 
 		FD_SET(ttyfd, &rs);
 
-		if (optionfd >= 0) {
-			FD_SET(optionfd, &rs);
+		if (item_pipe[0] >= 0) {
+			FD_SET(item_pipe[0], &rs);
 		}
 
 		if ((n = select(maxfd+1, &rs, &ws, NULL, NULL)) == -1) {
 			perror("select");
-			return 1;
+			exit(1);
 		}
 
-		if (FD_ISSET(optionfd, &rs)) {
-			if (read_tsv(optionfd, &options, &len) == 0) {
-				close(outfd);
-				return 1;
+		if (FD_ISSET(item_pipe[0], &rs)) {
+			if (read_tsv(item_pipe[0], &options, &len) == 0) {
+				close(out_pipe[1]);
+				exit(1);
 			}
 		}
 
@@ -452,7 +493,7 @@ int menu(int optionfd, int outfd, int ttyfd) {
 				}
 
 			case '\r':
-				write(outfd, r[sel], strlen(r[sel]));
+				write(out_pipe[1], r[sel], strlen(r[sel]));
 			}
 		}
 
@@ -471,12 +512,20 @@ int menu(int optionfd, int outfd, int ttyfd) {
 		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
 	}
 
+	exit(0);
+
 }
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
 	int i, n, fd, tty;
 	fd_set rs;
+
+	for (i = 3; i < 128; i++) {
+		if (close(i) == 0) {
+			printf("closed %d\n", i);
+		}
+	}
 
 	if ((key = getenv("LAMBDA_API_KEY")) == NULL || strlen(key) == 0) {
 		fprintf(stderr, "LAMBDA_API_KEY missing\n");
@@ -522,45 +571,23 @@ int main(/*int argc, char *argv[]*/) {
 		"terminate\n"
 	};
 
-
-	int item_pipe[2], out_pipe[2];
+	int optionfd = -1, outfd = -1;
 
 	for (;;) {
-		if (pipe(item_pipe) == -1) {
-			perror("item pipe");
-			exit(1);
+		if (menu(tty, &optionfd, &outfd) == -1) {
+			perror("menu");
 		}
 
-		if (pipe(out_pipe) == -1) {
-			perror("out pipe");
-			exit(1);
-		}
-
-		switch (n = fork()) {
-		case -1:
-			perror("fork");
-			exit(1);
-			break;
-		case 0:
-			close(item_pipe[1]);
-			menu(item_pipe[0], out_pipe[1], 0);
-			return 0;
-		default:
-			close(item_pipe[0]);
-			close(out_pipe[1]);
-			for (i = 0; i < LENGTH(items); i++) {
-				n = write(item_pipe[1], items[i], strlen(items[i]));
-				if (n == -1) {
-					perror("main write to menu");
-					exit(1);
-				}
+		for (i = 0; i < LENGTH(items); i++) {
+			n = write(optionfd, items[i], strlen(items[i]));
+			if (n == -1) {
+				perror("main write to menu");
+				exit(1);
 			}
-			break;
 		}
-
-		n = read(out_pipe[0], buf, sizeof(buf));
-		close(item_pipe[1]);
-		close(out_pipe[0]);
+		n = read(outfd, buf, sizeof(buf));
+		close(optionfd);
+		close(outfd);
 
 		if (strstr(buf, "create")) {
 		} else if (strstr(buf, "instances")) {
