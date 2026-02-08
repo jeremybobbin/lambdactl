@@ -387,21 +387,25 @@ int copy(int a, int b) {
 
 
 /* menu
- * forks, pipes
- * provides a writable optionfd pipe
- * provides a readable outfd
+ * provides a readable outfd         - read selected options here
+ * provides a writable optionfd pipe - write options here
+ * provides a writable ctlfd         - close this to stop the menu
  * returns -1 if pipes or fork fail
  * subprocess exits on error
  */
-int menu(int ttyfd, int *optionfd, int *outfd) {
-	int item_pipe[2], out_pipe[2];
+int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
+	int item_pipe[2], out_pipe[2], ctl_pipe[2];
 	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
 	char buf[2048], **options = NULL, *option;
 	fd_set rs, ws;
 	offset = 0;
 
-	if (optionfd == NULL || outfd == NULL) {
+	if (optionfd == NULL || outfd == NULL || ctlfd == NULL) {
 		errno = EINVAL;
+		return -1;
+	}
+
+	if (pipe(out_pipe) == -1) {
 		return -1;
 	}
 
@@ -409,7 +413,7 @@ int menu(int ttyfd, int *optionfd, int *outfd) {
 		return -1;
 	}
 
-	if (pipe(out_pipe) == -1) {
+	if (pipe(ctl_pipe) == -1) {
 		return -1;
 	}
 
@@ -419,20 +423,27 @@ int menu(int ttyfd, int *optionfd, int *outfd) {
 		exit(1);
 		break;
 	case 0:
-		close(item_pipe[1]);
 		close(out_pipe[0]);
+		close(item_pipe[1]);
+		close(ctl_pipe[1]);
 		break;
 	default:
-		close(item_pipe[0]);
+		// back to main process
+		// close the write-end of the out-pipe
+		// close the read-ends of the item-pipe & ctl-pipe
 		close(out_pipe[1]);
-		*optionfd = item_pipe[1];
+		close(item_pipe[0]);
+		close(ctl_pipe[0]);
 		*outfd = out_pipe[0];
+		*optionfd = item_pipe[1];
+		*ctlfd = ctl_pipe[1];
 		return n;
 	}
 
 
 
 	maxfd = MAX(maxfd, item_pipe[0]);
+	maxfd = MAX(maxfd, ctl_pipe[0]);
 	maxfd = MAX(maxfd, ttyfd);
 
 	// default colors
@@ -443,6 +454,7 @@ int menu(int ttyfd, int *optionfd, int *outfd) {
 		FD_ZERO(&ws);
 
 		FD_SET(ttyfd, &rs);
+		FD_SET(ctl_pipe[0], &rs);
 
 		if (item_pipe[0] >= 0) {
 			FD_SET(item_pipe[0], &rs);
@@ -510,6 +522,17 @@ int menu(int ttyfd, int *optionfd, int *outfd) {
 		}
 
 		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
+
+		if (FD_ISSET(ctl_pipe[0], &rs)) {
+			if (read(ctl_pipe[0], buf, sizeof(buf)) == 0) {
+				fprintf(stderr, "menu: control pipe closed\n");
+				break;
+			} else {
+				fprintf(stderr, "menu: unimplemented\n");
+				exit(1);
+			}
+		}
+
 	}
 
 	exit(0);
@@ -571,10 +594,10 @@ int main(/*int argc, char *argv[]*/) {
 		"terminate\n"
 	};
 
-	int optionfd = -1, outfd = -1;
+	int optionfd = -1, outfd = -1, ctlfd = -1;
 
 	for (;;) {
-		if (menu(tty, &optionfd, &outfd) == -1) {
+		if (menu(tty, &outfd, &optionfd, &ctlfd) == -1) {
 			perror("menu");
 		}
 
@@ -585,9 +608,11 @@ int main(/*int argc, char *argv[]*/) {
 				exit(1);
 			}
 		}
+
 		n = read(outfd, buf, sizeof(buf));
 		close(optionfd);
 		close(outfd);
+
 
 		if (strstr(buf, "create")) {
 		} else if (strstr(buf, "instances")) {
