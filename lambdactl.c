@@ -496,7 +496,9 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 					sel = 0;
 					break;
 				}
+
 				sel--;
+
 				if (offset <= 0) {
 					break;
 				}
@@ -521,7 +523,10 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 			}
 		}
 
-		fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
+		fflush(stdout);
+		if (MIN(len, win.ws_row)) {
+			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
+		}
 
 		if (FD_ISSET(ctl_pipe[0], &rs)) {
 			if (read(ctl_pipe[0], buf, sizeof(buf)) == 0) {
@@ -601,24 +606,26 @@ int main(/*int argc, char *argv[]*/) {
 			perror("menu");
 		}
 
-		for (i = 0; i < LENGTH(items); i++) {
-			n = write(optionfd, items[i], strlen(items[i]));
-			if (n == -1) {
-				perror("main write to menu");
-				exit(1);
+
+
+		if (strstr(buf, "create")) {
+			printf("create");
+		} else if (strstr(buf, "instances")) {
+		} else if (strstr(buf, "ssh")) {
+		} else if (strstr(buf, "terminate")) {
+		} else {
+			for (i = 0; i < LENGTH(items); i++) {
+				n = write(optionfd, items[i], strlen(items[i]));
+				if (n == -1) {
+					perror("main write to menu");
+					exit(1);
+				}
 			}
 		}
 
 		n = read(outfd, buf, sizeof(buf));
 		close(optionfd);
 		close(outfd);
-
-
-		if (strstr(buf, "create")) {
-		} else if (strstr(buf, "instances")) {
-		} else if (strstr(buf, "ssh")) {
-		} else if (strstr(buf, "terminate")) {
-		}
 	}
 
 	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
