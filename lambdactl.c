@@ -20,6 +20,11 @@ static struct termios term[2];
 static struct winsize win;
 char *key;
 
+typedef struct Pair {
+	char *key;
+	char *value;
+} Pair;
+
 int draw_line(int fd, char *text, int color) {
 	char *buf;
 	int i, j, n;
@@ -61,11 +66,11 @@ int draw_line(int fd, char *text, int color) {
 
 
 // read tsv into options array
-int read_tsv(int fd, char ***options, int *len) {
+int read_tsv(int fd, Pair **options, int *len) {
 	int m;
-	static int i, j, n;
+	static int i, j, n, off;
 	static char buf[2048]; // TODO - set to 10 & fix
-	char *option;
+	char *option, *str;
 
 	if (options == NULL) {
 		fprintf(stderr, "read_tsv failure\n");
@@ -83,20 +88,50 @@ int read_tsv(int fd, char ***options, int *len) {
 
 	n += m;
 
+	// if there's a tab somewhere in the line, set the first field as the key & the rest as the value
 	for (i = 0, j = 0; i < n; i++) {
 		if (buf[i] == '\n') {
-			if ((option = malloc(i-j+1)) == NULL) {
-				perror("malloc option");
-				exit(1);
-			}
-			memcpy(option, &buf[j], i-j);
-			option[i-j] = '\0';
-
 			if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
 				perror("malloc options");
 				break;
 			}
-			(*options)[*len] = option;
+
+			if ((str = memchr(&buf[j], '\t', i-j))) {
+				off = str - &buf[j];
+				if ((option = malloc(off+1)) == NULL) {
+					perror("malloc option");
+					exit(1);
+				}
+
+				memcpy(option, &buf[j], off+1);
+				option[off] = '\0';
+				(*options)[*len].key = option;
+
+				off += 1;
+
+				if ((option = malloc(i-j-off+1)) == NULL) {
+					perror("malloc option");
+					exit(1);
+				}
+				memcpy(option, &buf[j+off], i-j-off);
+				option[i-j-off] = '\0';
+				(*options)[*len].value = option;
+			} else {
+				if ((option = malloc(i-j+1)) == NULL) {
+					perror("malloc option");
+					exit(1);
+				}
+				memcpy(option, &buf[j], i-j);
+				option[i-j] = '\0';
+
+				if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
+					perror("malloc options");
+					break;
+				}
+				(*options)[*len].key = option;
+				(*options)[*len].value = option;
+			}
+
 			(*len)++;
 			j = i+1;
 		}
@@ -110,15 +145,15 @@ int read_tsv(int fd, char ***options, int *len) {
 }
 
 // items - array of tsv
-char **stretch(char **items, int len) {
+char **stretch(Pair *items, int len) {
 	int i, j, n, m, max = 0, pad, remaining, *widths;
 	char **columns, **rows, *row, *str;
 
 	// for every row, count the columns, to learn the maximum number of columns required
 	for (i = 0; i < len; i++) {
 		m = 1;
-		str = items[i];
-		//fprintf(stderr, "stretching: %s\n", items[i]);
+		str = items[i].value;
+		//fprintf(stderr, "stretching: %s\n", items[i].value);
 		for (j = 0; str[j]; j++) {
 			if (str[j] == '\t') {
 				m++;
@@ -138,7 +173,7 @@ char **stretch(char **items, int len) {
 	}
 
 	for (i = 0; i < len; i++) {
-		str = items[i];
+		str = items[i].value;
 
 		j = 0;
 		while (*str) {
@@ -175,7 +210,7 @@ char **stretch(char **items, int len) {
 		}
 
 		row = rows[i];
-		str = items[i];
+		str = items[i].value;
 		j = 0;
 		while (str && *str) {
 			for (n = 0; str[n] && str[n] != '\t'; n++);
@@ -342,7 +377,8 @@ int copy(int a, int b) {
 int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 	int item_pipe[2], out_pipe[2], ctl_pipe[2];
 	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
-	char buf[2048], **options = NULL, *option;
+	char buf[2048], *option;
+	Pair *options;
 	fd_set rs, ws;
 	offset = 0;
 
@@ -418,7 +454,7 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 			fflush(stdout);
 		}
 
-		char **r = stretch((char**)options, len);
+		char **r = stretch(options, len);
 
 		if (FD_ISSET(ttyfd, &rs)) {
 			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
