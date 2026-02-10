@@ -1,11 +1,9 @@
 #!/bin/sh
 curl https://cloud.lambda.ai/api/v1/instance-types -s -u "$LAMBDA_API_KEY" |
-	jq -r '.data | to_entries[] | .value | if .regions_with_capacity_available | length > 0 then
-		.instance_type | [
-			.name,
+	jq -r '.data | to_entries[] | .value as $v | $v.regions_with_capacity_available[] |
+		[
+			"\(.name)/\($v.instance_type.name)",
+			$v.instance_type.description,
 			.description,
-			.price_cents_per_hour/100
-		] | @tsv
-		else
-			empty
-		end'
+			$v.instance_type.price_cents_per_hour/100
+		] | @tsv'
