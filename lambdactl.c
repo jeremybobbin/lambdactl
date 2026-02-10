@@ -283,34 +283,6 @@ int match_ssh_key(char *key) {
 	return closedir(dir);
 }
 
-int fetch_instances(int *fd) {
-	int n, pp[2];
-
-	if (fd == NULL) {
-		errno = EINVAL;
-	}
-
-	if (pipe(pp) == -1) {
-		return -1;
-	}
-
-	*fd = pp[0];
-
-	switch ((n = fork())) {
-	case -1:
-		close(pp[0]);
-		close(pp[1]);
-		return -1;
-	case 0:
-		dup2(pp[1], 1);
-		close(pp[0]);
-		return execl("bin/instances", "instances");
-	default:
-		close(pp[1]);
-		return n;
-	}
-}
-
 int fetch_ssh_keys(int *fd) {
 	int n, pp[2];
 
@@ -559,9 +531,6 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	n = fetch_instances(&fd);
-	copy(1, fd);
-
 	/*
 	n = fetch_ssh_keys(&fd);
 	printf("fetch instances %d %d\n", n, fd);
@@ -599,6 +568,21 @@ int main(/*int argc, char *argv[]*/) {
 				break;
 			}
 		} else if (strstr(buf, "instances")) {
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return -1;
+			case 0:
+				dup2(optionfd, 1);
+				if (execl("bin/instances", "bin/instances") == 0) {
+					exit(0);
+				} else {
+					perror("exec bin/instance");
+					exit(1);
+				}
+			default:
+				break;
+			}
 		} else if (strstr(buf, "ssh")) {
 		} else if (strstr(buf, "terminate")) {
 		} else {
