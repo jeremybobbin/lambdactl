@@ -1,0 +1,16 @@
+#!/bin/sh -xe
+
+instance="${1%%/*}"
+zone="${1##*/}"
+key="$2"
+
+printf '{
+	"region_name": "%s",
+	"instance_type_name": "%s",
+	"ssh_key_names": [
+		"%s"
+	],
+	"file_system_names": [],
+	"file_system_mounts": []
+}' "${instance}" "${zone}" "${key}" |
+	curl -v https://cloud.lambda.ai/api/v1/instance-operations/launch -s -u "$LAMBDA_API_KEY" --data-binary @-
