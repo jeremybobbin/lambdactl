@@ -3,9 +3,12 @@
 CFLAGS=-Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Wpedantic -ggdb -fdiagnostics-color=always
 LDFLAGS=-lssl -lcrypto
 
-lambdactl:
+build: lambdactl menu
 
-run: lambdactl
+lambdactl:
+menu:
+
+run: lambdactl menu
 	./lambdactl localhost:8080 /
 
 clean:
