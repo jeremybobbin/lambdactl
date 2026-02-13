@@ -130,7 +130,6 @@ char **stretch(Pair *items, int len) {
 	for (i = 0; i < len; i++) {
 		m = 1;
 		str = items[i].value;
-		//fprintf(stderr, "stretching: %s\n", items[i].value);
 		for (j = 0; str[j]; j++) {
 			if (str[j] == '\t') {
 				m++;
@@ -209,21 +208,12 @@ char **stretch(Pair *items, int len) {
 	return rows;
 }
 
-
-/*
- *
- *
- */
-
 int main(/*int argc, char *argv[]*/) {
-	int item_pipe[2], out_pipe[2], ctl_pipe[2];
-	int i, n, tty, sel = 0, offset = 0, color, len = 0, maxfd = 0, closed = 0;
-	char buf[2048], *option;
+	int i, n, tty, sel = 0, offset = 0, len = 0;
+	char buf[2048];
 	Pair *options = NULL;
 	fd_set rs, ws;
 	offset = 0;
-
-	fprintf(stderr, "%d\n", getpid());
 
 	if ((tty = open("/dev/tty", O_RDONLY)) == -1) {
 		perror("failed to open tty");
@@ -248,24 +238,15 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	maxfd = MAX(maxfd, 0);
-	maxfd = MAX(maxfd, tty);
-
 	// default colors
 	write(tty, "\x1b[0m", sizeof("\x1b[0m")-1);
-
-	fprintf(stderr, "wrote default colors\n");
 
 	for (;;) {
 		FD_ZERO(&rs);
 		FD_ZERO(&ws);
 
+		FD_SET(0, &rs);
 		FD_SET(tty, &rs);
-
-		// if stdin ian'ts closed
-		if (closed ^ (1<<0)) {
-			FD_SET(0, &rs);
-		}
 
 		if ((n = select(5, &rs, &ws, NULL, NULL)) == -1) {
 			perror("select");
@@ -275,7 +256,7 @@ int main(/*int argc, char *argv[]*/) {
 		if (FD_ISSET(0, &rs)) {
 			if (read_tsv(0, &options, &len) == 0) {
 				// stdin is closed
-				closed |= (1<<0);
+				break;
 			}
 			fflush(stdout);
 		}
