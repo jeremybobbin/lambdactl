@@ -374,15 +374,15 @@ int copy(int a, int b) {
  * returns -1 if pipes or fork fail
  * subprocess exits on error
  */
-int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
-	int item_pipe[2], out_pipe[2], ctl_pipe[2];
+int menu(int *outfd, int *optionfd) {
+	int item_pipe[2], out_pipe[2];
 	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
 	char buf[2048], *option;
 	Pair *options;
 	fd_set rs, ws;
 	offset = 0;
 
-	if (optionfd == NULL || outfd == NULL || ctlfd == NULL) {
+	if (optionfd == NULL || outfd == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -395,19 +395,12 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 		return -1;
 	}
 
-	if (pipe(ctl_pipe) == -1) {
-		return -1;
-	}
-
 	switch (n = fork()) {
 	case -1:
 		perror("fork");
 		exit(1);
 		break;
 	case 0:
-		close(out_pipe[0]);
-		close(item_pipe[1]);
-		close(ctl_pipe[1]);
 		break;
 	default:
 		// back to main process
@@ -415,117 +408,18 @@ int menu(int ttyfd, int *outfd, int *optionfd, int *ctlfd) {
 		// close the read-ends of the item-pipe & ctl-pipe
 		close(out_pipe[1]);
 		close(item_pipe[0]);
-		close(ctl_pipe[0]);
 		*outfd = out_pipe[0];
 		*optionfd = item_pipe[1];
-		*ctlfd = ctl_pipe[1];
 		return n;
 	}
 
+	close(out_pipe[0]);
+	close(item_pipe[1]);
 
+	dup2(item_pipe[0], 0);
+	dup2(out_pipe[1], 1);
 
-	maxfd = MAX(maxfd, item_pipe[0]);
-	maxfd = MAX(maxfd, ctl_pipe[0]);
-	maxfd = MAX(maxfd, ttyfd);
-
-	// default colors
-	write(ttyfd, "\x1b[0m", sizeof("\x1b[0m")-1);
-
-	for (;;) {
-		FD_ZERO(&rs);
-		FD_ZERO(&ws);
-
-		FD_SET(ttyfd, &rs);
-		FD_SET(ctl_pipe[0], &rs);
-
-		if (item_pipe[0] >= 0) {
-			FD_SET(item_pipe[0], &rs);
-		}
-
-		if ((n = select(maxfd+1, &rs, &ws, NULL, NULL)) == -1) {
-			perror("select");
-			exit(1);
-		}
-
-		if (FD_ISSET(item_pipe[0], &rs)) {
-			if (read_tsv(item_pipe[0], &options, &len) == 0) {
-				item_pipe[0] = -1;
-			}
-			fflush(stdout);
-		}
-
-		char **r = stretch(options, len);
-
-		if (FD_ISSET(ttyfd, &rs)) {
-			if ((n = read(ttyfd, buf, sizeof(buf))) == -1) {
-				perror("read stdin");
-				break;
-			}
-
-			switch (buf[0]) {
-			case 0x40 ^ 'J': case 0x40 ^ 'N':
-				sel++;
-				sel = MIN(sel, len-1);
-				if (sel >= offset+MIN(len, win.ws_row)) {
-					offset++;
-				}
-				offset = MIN(offset, len-MIN(len, win.ws_row));
-				offset = MAX(offset, 0);
-				break;
-
-			case 0x40 ^ 'K': case 0x40 ^ 'P':
-				if (sel-1 <= 0) {
-					sel = 0;
-					break;
-				}
-
-				sel--;
-
-				if (offset <= 0) {
-					break;
-				}
-				if (sel <= offset) {
-					offset--;
-				}
-				break;
-
-			case '\r':
-				write(out_pipe[1], r[sel], strlen(r[sel]));
-			}
-		}
-
-		for (i = 0; i < len; i++) {
-			switch (i == sel) {
-			case 0: // default
-				fprintf(stderr, "\n\x1b[2K %s ", r[i]);
-				break;
-			default: // reverse
-				// cursor column n
-				fprintf(stderr, "\n\x1b[2K\x1b[7m %s \x1b[0m", r[i]);
-				break;
-			}
-		}
-
-		if (MIN(len, win.ws_row)) {
-			// cursor up n-times, cursor to column n
-			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), len);
-		}
-
-		if (FD_ISSET(ctl_pipe[0], &rs)) {
-			if (read(ctl_pipe[0], buf, sizeof(buf)) == 0) {
-				break;
-			} else {
-				fprintf(stderr, "menu: unimplemented\n");
-				exit(1);
-			}
-		}
-
-	}
-	// erase to end of screen
-	fprintf(stderr, "\x1b[G\x1b[J");
-
-	exit(0);
-
+	execl("./menu", "./menu");
 }
 
 int main(/*int argc, char *argv[]*/) {
@@ -544,29 +438,6 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	if ((tty = open("/dev/tty", O_RDONLY)) == -1) {
-		perror("failed to open tty");
-		return 1;
-	}
-
-	tcgetattr(tty, &term[0]);
-	term[1] = term[0];
-	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-	term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
-	term[1].c_cflag &= ~(CSIZE|PARENB);
-	term[1].c_cflag |= CS8;
-	term[1].c_cc[VMIN] = 1;
-
-	if (tcsetattr(tty, TCSANOW, &term[1]) < 0) {
-		perror("failed to setup tty");
-		return 1;
-	}
-
-	if (ioctl(tty, TIOCGWINSZ, &win) < 0) {
-		perror("failed to get tty size");
-		return 1;
-	}
-
 	/*
 	n = fetch_ssh_keys(&fd);
 	printf("fetch instances %d %d\n", n, fd);
@@ -580,10 +451,10 @@ int main(/*int argc, char *argv[]*/) {
 		"terminate\n"
 	};
 
-	int optionfd = -1, outfd = -1, ctlfd = -1;
+	int optionfd = -1, outfd = -1;
 
 	for (;;) {
-		if (menu(tty, &outfd, &optionfd, &ctlfd) == -1) {
+		if (menu(&outfd, &optionfd) == -1) {
 			perror("menu");
 		}
 
@@ -629,12 +500,11 @@ int main(/*int argc, char *argv[]*/) {
 					exit(1);
 				}
 			}
-			close(optionfd);
 		}
 
 		n = read(outfd, buf, sizeof(buf));
+		close(optionfd);
 		close(outfd);
-		close(ctlfd);
 	}
 
 	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
