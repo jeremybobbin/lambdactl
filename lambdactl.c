@@ -25,46 +25,6 @@ typedef struct Pair {
 	char *value;
 } Pair;
 
-int draw_line(int fd, char *text, int color) {
-	char *buf;
-	int i, j, n;
-
-	if ((buf = malloc((win.ws_col-PADDING))) == NULL) {
-		perror("malloc");
-		exit(1);
-	}
-
-	for (i = 0, j = 0, n = 0; i < (win.ws_col-PADDING); i++) {
-		if (n > 0) {
-			n--;
-			buf[i] = ' ';
-		} else if (j < (int) strlen(text)) {
-			switch (text[j]) {
-			case '\t':
-				n = 7;
-				buf[i] = ' ';
-				j++;
-				break;
-			default:
-				buf[i] = text[j];
-				break;
-				j++;
-			}
-		} else {
-			buf[i] = ' ';
-		}
-	}
-
-	switch (color) {
-	case 0: // default
-		return dprintf(fd, "\n\x1b[2K %s ", buf);
-	default: // reverse
-		// cursor column n
-		return dprintf(fd, "\n\x1b[2K\x1b[7m %s \x1b[0m", buf);
-	}
-}
-
-
 // read tsv into options array
 int read_tsv(int fd, Pair **options, int *len) {
 	int m;
