@@ -1,7 +1,7 @@
 .POSIX:
 
-CFLAGS=-Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L -Wpedantic -ggdb -fdiagnostics-color=always
-LDFLAGS=-lssl -lcrypto
+CFLAGS=-Wall -Wextra -O2 -Wpedantic -ggdb -fdiagnostics-color=always
+LDFLAGS=
 
 build: lambdactl menu
 
@@ -12,4 +12,4 @@ run: lambdactl menu
 	./lambdactl localhost:8080 /
 
 clean:
-	rm lambdactl
+	rm lambdactl menu
