@@ -8,6 +8,7 @@
 #include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define PADDING 2
 #define CONTROL(ch)   (ch ^ 0x40)
@@ -24,6 +25,8 @@ typedef struct Pair {
 	char *key;
 	char *value;
 } Pair;
+
+int kill(pid_t pid, int sig); // TODO
 
 // read tsv into options array
 int read_tsv(int fd, Pair **options, int *len) {
@@ -384,7 +387,7 @@ int menu(int *outfd, int *optionfd) {
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int i, n, fd, tty;
+	int i, n, fd, tty, pid;
 	fd_set rs;
 
 	for (i = 3; i < 128; i++) {
@@ -414,7 +417,7 @@ int main(/*int argc, char *argv[]*/) {
 	int optionfd = -1, outfd = -1;
 
 	for (;;) {
-		if (menu(&outfd, &optionfd) == -1) {
+		if ((pid = menu(&outfd, &optionfd)) == -1) {
 			perror("menu");
 		}
 
@@ -462,9 +465,10 @@ int main(/*int argc, char *argv[]*/) {
 			}
 		}
 
-		n = read(outfd, buf, sizeof(buf));
 		close(optionfd);
+		n = read(outfd, buf, sizeof(buf));
 		close(outfd);
+		kill(pid, SIGINT);
 	}
 
 	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
@@ -474,5 +478,3 @@ int main(/*int argc, char *argv[]*/) {
 
 	return 0;
 }
-
-

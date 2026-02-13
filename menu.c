@@ -16,8 +16,9 @@
 #define MAX(a,b)      ((a) > (b) ? (a) : (b))
 #define LENGTH(x)  ((int)(sizeof (x) / sizeof *(x)))
 
-static struct termios term[2];
-static struct winsize win;
+int tty;
+struct termios term[2];
+struct winsize win;
 
 typedef struct Pair {
 	char *key;
@@ -208,8 +209,17 @@ char **stretch(Pair *items, int len) {
 	return rows;
 }
 
+void handle_exit() {
+	// erase to end of screen
+	fprintf(stderr, "\x1b[G\x1b[J");
+
+	if (tcsetattr(tty, TCSANOW, &term[0]) < 0) {
+		perror("failed to teardown tty");
+	}
+}
+
 int main(/*int argc, char *argv[]*/) {
-	int i, n, tty, sel = 0, offset = 0, len = 0;
+	int i, n, sel = 0, offset = 0, len = 0, closed = 0;
 	char buf[2048];
 	Pair *options = NULL;
 	fd_set rs, ws;
@@ -220,7 +230,12 @@ int main(/*int argc, char *argv[]*/) {
 		return 1;
 	}
 
-	tcgetattr(tty, &term[0]);
+	if (tcgetattr(tty, &term[0]) == -1) {
+		perror("tcgetattr");
+		return 1;
+	}
+	atexit(handle_exit);
+
 	term[1] = term[0];
 	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
 	term[1].c_lflag &= ~(ECHO|ECHONL|IEXTEN|ICANON); // |ICANON
@@ -245,8 +260,10 @@ int main(/*int argc, char *argv[]*/) {
 		FD_ZERO(&rs);
 		FD_ZERO(&ws);
 
-		FD_SET(0, &rs);
 		FD_SET(tty, &rs);
+		if (!closed) {
+			FD_SET(0, &rs);
+		}
 
 		if ((n = select(5, &rs, &ws, NULL, NULL)) == -1) {
 			perror("select");
@@ -256,7 +273,7 @@ int main(/*int argc, char *argv[]*/) {
 		if (FD_ISSET(0, &rs)) {
 			if (read_tsv(0, &options, &len) == 0) {
 				// stdin is closed
-				break;
+				closed = 1;
 			}
 			fflush(stdout);
 		}
@@ -320,9 +337,6 @@ int main(/*int argc, char *argv[]*/) {
 		}
 
 	}
-	// erase to end of screen
-	fprintf(stderr, "\x1b[G\x1b[J");
 
-	exit(0);
-
+	return 0;
 }
