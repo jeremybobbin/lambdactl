@@ -26,8 +26,6 @@ typedef struct Pair {
 	char *value;
 } Pair;
 
-int kill(pid_t pid, int sig); // TODO
-
 // read tsv into options array
 int read_tsv(int fd, Pair **options, int *len) {
 	int m;
@@ -339,11 +337,7 @@ int copy(int a, int b) {
  */
 int menu(int *outfd, int *optionfd) {
 	int item_pipe[2], out_pipe[2];
-	int i, n, sel = 0, offset = 0, color, len = 0, maxfd = 0;
-	char buf[2048], *option;
-	Pair *options;
-	fd_set rs, ws;
-	offset = 0;
+	int n;
 
 	if (optionfd == NULL || outfd == NULL) {
 		errno = EINVAL;
@@ -382,7 +376,7 @@ int menu(int *outfd, int *optionfd) {
 	dup2(item_pipe[0], 0);
 	dup2(out_pipe[1], 1);
 
-	execl("./menu", "./menu");
+	return execl("./menu", "./menu", NULL);
 }
 
 enum {
@@ -395,8 +389,7 @@ enum {
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int i, n, fd, tty, pid, state = NONE;
-	fd_set rs;
+	int i, n, tty, pid, state = NONE;
 
 	union {
 		char *s;
@@ -404,7 +397,7 @@ int main(/*int argc, char *argv[]*/) {
 
 	for (i = 3; i < 128; i++) {
 		if (close(i) == 0) {
-			printf("closed %d\n", i);
+			//printf("closed %d\n", i);
 		}
 	}
 
@@ -444,12 +437,9 @@ int main(/*int argc, char *argv[]*/) {
 					return -1;
 				case 0:
 					dup2(optionfd, 1);
-					if (execl("bin/instance-types", "bin/instance-types") == 0) {
-						exit(0);
-					} else {
-						perror("exec bin/instance-types");
-						exit(1);
-					}
+					execl("bin/instance-types", "bin/instance-types", NULL);
+					perror("exec bin/instance-types");
+					exit(1);
 				default:
 					break;
 				}
@@ -461,12 +451,9 @@ int main(/*int argc, char *argv[]*/) {
 					return -1;
 				case 0:
 					dup2(optionfd, 1);
-					if (execl("bin/instances", "bin/instances") == 0) {
-						exit(0);
-					} else {
-						perror("exec bin/instance");
-						exit(1);
-					}
+					execl("bin/instances", "bin/instances", NULL);
+					perror("exec bin/instance");
+					exit(1);
 				default:
 					break;
 				}
@@ -478,12 +465,9 @@ int main(/*int argc, char *argv[]*/) {
 					return -1;
 				case 0:
 					dup2(optionfd, 1);
-					if (execl("bin/instances", "bin/instances") == 0) {
-						exit(0);
-					} else {
-						perror("exec bin/instance");
-						exit(1);
-					}
+					execl("bin/instances", "bin/instances", NULL);
+					perror("exec bin/instance");
+					exit(1);
 				default:
 					break;
 				}
@@ -495,12 +479,9 @@ int main(/*int argc, char *argv[]*/) {
 					return -1;
 				case 0:
 					dup2(optionfd, 1);
-					if (execl("bin/instances", "bin/instances") == 0) {
-						exit(0);
-					} else {
-						perror("exec bin/instance");
-						exit(1);
-					}
+					execl("bin/instances", "bin/instances", NULL);
+					perror("exec bin/instance");
+					exit(1);
 				default:
 					break;
 				}
