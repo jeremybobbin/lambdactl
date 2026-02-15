@@ -508,7 +508,11 @@ int main(/*int argc, char *argv[]*/) {
 
 
 		close(optionfd);
-		n = read(outfd, buf, sizeof(buf));
+		n = read(outfd, buf, sizeof(buf)-1);
+		buf[n] = '\0';
+		if (n == 0) {
+			state = NONE;
+		}
 		close(outfd);
 		kill(pid, SIGINT);
 	}
