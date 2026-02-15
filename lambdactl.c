@@ -17,182 +17,7 @@
 #define MAX(a,b)      ((a) > (b) ? (a) : (b))
 #define LENGTH(x)  ((int)(sizeof (x) / sizeof *(x)))
 
-static struct termios term[2];
-static struct winsize win;
 char *key;
-
-typedef struct Pair {
-	char *key;
-	char *value;
-} Pair;
-
-// read tsv into options array
-int read_tsv(int fd, Pair **options, int *len) {
-	int m;
-	static int i, j, n, off;
-	static char buf[2048]; // TODO - set to 10 & fix
-	char *option, *str;
-
-	if (options == NULL) {
-		fprintf(stderr, "read_tsv failure\n");
-		exit(1);
-	}
-
-	if ((m = read(fd, &buf[i], sizeof(buf)-i)) == -1) {
-		perror("read in read_tsv");
-		return -1;
-	}
-
-	if (m == 0) {
-		return 0;
-	}
-
-	n += m;
-
-	// if there's a tab somewhere in the line, set the first field as the key & the rest as the value
-	for (i = 0, j = 0; i < n; i++) {
-		if (buf[i] == '\n') {
-			if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
-				perror("malloc options");
-				break;
-			}
-
-			if ((str = memchr(&buf[j], '\t', i-j))) {
-				off = str - &buf[j];
-				if ((option = malloc(off+1)) == NULL) {
-					perror("malloc option");
-					exit(1);
-				}
-
-				memcpy(option, &buf[j], off+1);
-				option[off] = '\0';
-				(*options)[*len].key = option;
-
-				off += 1;
-
-				if ((option = malloc(i-j-off+1)) == NULL) {
-					perror("malloc option");
-					exit(1);
-				}
-				memcpy(option, &buf[j+off], i-j-off);
-				option[i-j-off] = '\0';
-				(*options)[*len].value = option;
-			} else {
-				if ((option = malloc(i-j+1)) == NULL) {
-					perror("malloc option");
-					exit(1);
-				}
-				memcpy(option, &buf[j], i-j);
-				option[i-j] = '\0';
-
-				if ((*options = realloc(*options, sizeof(**options)*(*len+1))) == NULL) {
-					perror("malloc options");
-					break;
-				}
-				(*options)[*len].key = option;
-				(*options)[*len].value = option;
-			}
-
-			(*len)++;
-			j = i+1;
-		}
-	}
-
-	memmove(buf, &buf[i], n-i);
-	n -= i;
-	i = 0;
-
-	return 1;
-}
-
-// items - array of tsv
-char **stretch(Pair *items, int len) {
-	int i, j, n, m, max = 0, pad, remaining, *widths;
-	char **columns, **rows, *row, *str;
-
-	// for every row, count the columns, to learn the maximum number of columns required
-	for (i = 0; i < len; i++) {
-		m = 1;
-		str = items[i].value;
-		//fprintf(stderr, "stretching: %s\n", items[i].value);
-		for (j = 0; str[j]; j++) {
-			if (str[j] == '\t') {
-				m++;
-			}
-		}
-
-		max = MAX(m, max);
-	}
-
-	if ((columns = malloc(sizeof(*columns)*max)) == NULL) {
-		return NULL;
-	}
-
-	// this is the max widths of each column
-	if ((widths = malloc(sizeof(*widths)*max)) == NULL) {
-		return NULL;
-	}
-
-	for (i = 0; i < len; i++) {
-		str = items[i].value;
-
-		j = 0;
-		while (*str) {
-			for (n = 0; str[n] && str[n] != '\t'; n++);
-			widths[j] = MAX(widths[j], n);
-
-			if (str[n] == '\0') {
-				break;
-			}
-
-			str += n + 1;
-			j++;
-		}
-	}
-
-	remaining = win.ws_col - PADDING;
-	for (i = 0; i < max; i++) {
-		remaining -= widths[i];
-	}
-
-	if ((rows = malloc(sizeof(*rows)*len)) == NULL) {
-		return NULL;
-	}
-
-	if (max > 1) {
-		pad = remaining / (max - 1);
-	} else {
-		pad = remaining;
-	}
-
-	for (i = 0; i < len; i++) {
-		if ((rows[i] = malloc(sizeof(**rows)*win.ws_col)) == NULL) {
-			return NULL;
-		}
-
-		row = rows[i];
-		str = items[i].value;
-		j = 0;
-		while (str && *str) {
-			for (n = 0; str[n] && str[n] != '\t'; n++);
-
-			if (j == max-1) {
-				row = row + sprintf(row, "%*.*s", widths[j], n, str);
-			} else {
-				row = row + sprintf(row, "%-*.*s", pad+widths[j], n, str);
-			}
-			j++;
-
-			if (!str[n]) {
-				break;
-			}
-			str += n+1;
-		}
-	}
-
-	return rows;
-}
-
 
 int fdstrcmp(int fd, const char *s) {
 	int len, i, n;
@@ -310,24 +135,6 @@ int fetch_ssh_keys(int *fd) {
 
 }
 
-int copy(int a, int b) {
-	int n, m;
-	char buf[4096];
-
-	for (m = 0;; m += n) {
-		if ((n = read(b, buf, sizeof(buf))) <= 0) {
-			break;
-		}
-
-		if ((n = write(a, buf, n)) <= 0) {
-			break;
-		}
-	}
-
-	return m;
-}
-
-
 /* menu
  * provides a readable outfd         - read selected options here
  * provides a writable optionfd pipe - write options here
@@ -390,7 +197,7 @@ enum {
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int i, n, tty, pid, state = NONE;
+	int i, n, pid, state = NONE;
 
 	union {
 		char *s;
@@ -406,12 +213,6 @@ int main(/*int argc, char *argv[]*/) {
 		fprintf(stderr, "LAMBDA_API_KEY missing\n");
 		return 1;
 	}
-
-	/*
-	n = fetch_ssh_keys(&fd);
-	printf("fetch instances %d %d\n", n, fd);
-	copy(1, fd);
-	*/
 
 	const char *items[] = {
 		"create\n",
