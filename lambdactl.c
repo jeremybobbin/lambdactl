@@ -385,10 +385,22 @@ int menu(int *outfd, int *optionfd) {
 	execl("./menu", "./menu");
 }
 
+enum {
+	NONE = 0,
+	CREATE,
+	INSTANCES,
+	SSH,
+	TERMINATE,
+};
+
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int i, n, fd, tty, pid;
+	int i, n, fd, tty, pid, state = NONE;
 	fd_set rs;
+
+	union {
+		char *s;
+	} args;
 
 	for (i = 3; i < 128; i++) {
 		if (close(i) == 0) {
@@ -416,54 +428,103 @@ int main(/*int argc, char *argv[]*/) {
 
 	int optionfd = -1, outfd = -1;
 
-	for (;;) {
+	for (n = 0;;) {
 		if ((pid = menu(&outfd, &optionfd)) == -1) {
 			perror("menu");
 		}
 
-		if (strstr(buf, "create")) {
-			switch ((n = fork())) {
-			case -1:
-				perror("fork");
-				return -1;
-			case 0:
-				dup2(optionfd, 1);
-				if (execl("bin/instance-types", "bin/instance-types") == 0) {
-					exit(0);
-				} else {
-					perror("exec bin/instance-types");
-					exit(1);
+
+		switch (state) {
+		case NONE:
+			if (strstr(buf, "create")) {
+				state = CREATE;
+				switch ((n = fork())) {
+				case -1:
+					perror("fork");
+					return -1;
+				case 0:
+					dup2(optionfd, 1);
+					if (execl("bin/instance-types", "bin/instance-types") == 0) {
+						exit(0);
+					} else {
+						perror("exec bin/instance-types");
+						exit(1);
+					}
+				default:
+					break;
 				}
-			default:
-				break;
-			}
-		} else if (strstr(buf, "instances")) {
-			switch ((n = fork())) {
-			case -1:
-				perror("fork");
-				return -1;
-			case 0:
-				dup2(optionfd, 1);
-				if (execl("bin/instances", "bin/instances") == 0) {
-					exit(0);
-				} else {
-					perror("exec bin/instance");
-					exit(1);
+			} else if (strstr(buf, "instances")) {
+				state = INSTANCES;
+				switch ((n = fork())) {
+				case -1:
+					perror("fork");
+					return -1;
+				case 0:
+					dup2(optionfd, 1);
+					if (execl("bin/instances", "bin/instances") == 0) {
+						exit(0);
+					} else {
+						perror("exec bin/instance");
+						exit(1);
+					}
+				default:
+					break;
 				}
-			default:
-				break;
-			}
-		} else if (strstr(buf, "ssh")) {
-		} else if (strstr(buf, "terminate")) {
-		} else {
-			for (i = 0; i < LENGTH(items); i++) {
-				n = write(optionfd, items[i], strlen(items[i]));
-				if (n == -1) {
-					perror("main write to menu");
-					exit(1);
+			} else if (strstr(buf, "ssh")) {
+				state = SSH;
+				switch ((n = fork())) {
+				case -1:
+					perror("fork");
+					return -1;
+				case 0:
+					dup2(optionfd, 1);
+					if (execl("bin/instances", "bin/instances") == 0) {
+						exit(0);
+					} else {
+						perror("exec bin/instance");
+						exit(1);
+					}
+				default:
+					break;
+				}
+			} else if (strstr(buf, "terminate")) {
+				state = TERMINATE;
+				switch ((n = fork())) {
+				case -1:
+					perror("fork");
+					return -1;
+				case 0:
+					dup2(optionfd, 1);
+					if (execl("bin/instances", "bin/instances") == 0) {
+						exit(0);
+					} else {
+						perror("exec bin/instance");
+						exit(1);
+					}
+				default:
+					break;
+				}
+			} else {
+				for (i = 0; i < LENGTH(items); i++) {
+					n = write(optionfd, items[i], strlen(items[i]));
+					if (n == -1) {
+						perror("main write to menu");
+						exit(1);
+					}
 				}
 			}
+			break;
+		case CREATE:
+			break;
+		case INSTANCES:
+			break;
+		case SSH:
+			break;
+		case TERMINATE:
+			break;
+
 		}
+
 
 		close(optionfd);
 		n = read(outfd, buf, sizeof(buf));
