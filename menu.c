@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,8 @@ typedef struct Pair {
 	char *key;
 	char *value;
 } Pair;
+
+static volatile sig_atomic_t got_signal = 0;
 
 int find(Pair *pairs, int len, char *key) {
 	int i;
@@ -209,13 +212,8 @@ char **stretch(Pair *items, int len) {
 	return rows;
 }
 
-void handle_exit() {
-	// erase to end of screen
-	fprintf(stderr, "\x1b[G\x1b[J");
-
-	if (tcsetattr(tty, TCSANOW, &term[0]) < 0) {
-		perror("failed to teardown tty");
-	}
+void signal_handler(int n) {
+	got_signal = n;
 }
 
 int main(/*int argc, char *argv[]*/) {
@@ -224,6 +222,33 @@ int main(/*int argc, char *argv[]*/) {
 	Pair *options = NULL;
 	fd_set rs, ws;
 	offset = 0;
+	struct sigaction sa;
+	sigset_t block, empty;
+	memset(&sa, 0, sizeof(sa));
+	sigemptyset(&block);
+	sigemptyset(&empty);
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+
+	sigaddset(&block, SIGINT);
+	sigaddset(&block, SIGTERM);
+
+	if (sigprocmask(SIG_BLOCK, &block, NULL) != 0) {
+		perror("sigprocmask");
+		return 1;
+	}
+
+	sa.sa_handler = signal_handler;
+
+	if (sigaction(SIGINT, &sa, NULL) != 0) {
+		perror("sigint");
+		return 1;
+	}
+
+	if (sigaction(SIGTERM, &sa, NULL) != 0) {
+		perror("sigterm");
+		return 1;
+	}
 
 	if ((tty = open("/dev/tty", O_RDONLY)) == -1) {
 		perror("failed to open tty");
@@ -234,7 +259,6 @@ int main(/*int argc, char *argv[]*/) {
 		perror("tcgetattr");
 		return 1;
 	}
-	atexit(handle_exit);
 
 	term[1] = term[0];
 	term[1].c_iflag &= ~(BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
@@ -265,9 +289,16 @@ int main(/*int argc, char *argv[]*/) {
 			FD_SET(0, &rs);
 		}
 
-		if ((n = select(5, &rs, &ws, NULL, NULL)) == -1) {
+		if ((n = pselect(5, &rs, &ws, NULL, NULL, &empty)) == -1) {
+			if (errno == EINTR) {
+				break;
+			}
 			perror("select");
 			exit(1);
+		}
+
+		if (got_signal) {
+			break;
 		}
 
 		if (FD_ISSET(0, &rs)) {
@@ -313,7 +344,7 @@ int main(/*int argc, char *argv[]*/) {
 				}
 				break;
 			case 0x40 ^ '[':
-				return 0;
+				goto out;
 			case '\r':
 				write(1, r[sel], strlen(r[sel]));
 				write(1, "\n", 1);
@@ -338,6 +369,15 @@ int main(/*int argc, char *argv[]*/) {
 			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), len);
 		}
 
+	}
+
+out:
+
+	// erase to end of screen
+	fprintf(stderr, "\x1b[G\x1b[J");
+
+	if (tcsetattr(tty, TCSANOW, &term[0]) < 0) {
+		perror("failed to teardown tty");
 	}
 
 	return 0;
