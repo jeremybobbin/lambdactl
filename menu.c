@@ -312,10 +312,12 @@ int main(/*int argc, char *argv[]*/) {
 					offset--;
 				}
 				break;
-
+			case 0x40 ^ '[':
+				return 0;
 			case '\r':
 				write(1, r[sel], strlen(r[sel]));
 				write(1, "\n", 1);
+				break;
 			}
 		}
 
