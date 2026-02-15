@@ -385,6 +385,7 @@ enum {
 	INSTANCES,
 	SSH,
 	TERMINATE,
+	SELECT_INSTANCE_TYPE,
 };
 
 int main(/*int argc, char *argv[]*/) {
@@ -426,82 +427,39 @@ int main(/*int argc, char *argv[]*/) {
 			perror("menu");
 		}
 
-
 		switch (state) {
 		case NONE:
-			if (strstr(buf, "create")) {
-				state = CREATE;
-				switch ((n = fork())) {
-				case -1:
-					perror("fork");
-					return -1;
-				case 0:
-					dup2(optionfd, 1);
-					execl("bin/instance-types", "bin/instance-types", NULL);
-					perror("exec bin/instance-types");
+			for (i = 0; i < LENGTH(items); i++) {
+				n = write(optionfd, items[i], strlen(items[i]));
+				if (n == -1) {
+					perror("main write to menu");
 					exit(1);
-				default:
-					break;
-				}
-			} else if (strstr(buf, "instances")) {
-				state = INSTANCES;
-				switch ((n = fork())) {
-				case -1:
-					perror("fork");
-					return -1;
-				case 0:
-					dup2(optionfd, 1);
-					execl("bin/instances", "bin/instances", NULL);
-					perror("exec bin/instance");
-					exit(1);
-				default:
-					break;
-				}
-			} else if (strstr(buf, "ssh")) {
-				state = SSH;
-				switch ((n = fork())) {
-				case -1:
-					perror("fork");
-					return -1;
-				case 0:
-					dup2(optionfd, 1);
-					execl("bin/instances", "bin/instances", NULL);
-					perror("exec bin/instance");
-					exit(1);
-				default:
-					break;
-				}
-			} else if (strstr(buf, "terminate")) {
-				state = TERMINATE;
-				switch ((n = fork())) {
-				case -1:
-					perror("fork");
-					return -1;
-				case 0:
-					dup2(optionfd, 1);
-					execl("bin/instances", "bin/instances", NULL);
-					perror("exec bin/instance");
-					exit(1);
-				default:
-					break;
-				}
-			} else {
-				for (i = 0; i < LENGTH(items); i++) {
-					n = write(optionfd, items[i], strlen(items[i]));
-					if (n == -1) {
-						perror("main write to menu");
-						exit(1);
-					}
 				}
 			}
 			break;
 		case CREATE:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/instance-types", "bin/instance-types", NULL);
+				perror("exec bin/instance-types");
+				exit(1);
+			}
 			break;
-		case INSTANCES:
-			break;
-		case SSH:
-			break;
-		case TERMINATE:
+		case INSTANCES: case SSH: case TERMINATE:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/instances", "bin/instances", NULL);
+				perror("exec bin/instance");
+				exit(1);
+			}
 			break;
 
 		}
@@ -510,16 +468,53 @@ int main(/*int argc, char *argv[]*/) {
 		close(optionfd);
 		n = read(outfd, buf, sizeof(buf)-1);
 		buf[n] = '\0';
-		if (n == 0) {
-			state = NONE;
-		}
 		close(outfd);
 		kill(pid, SIGINT);
-	}
 
-	if (tcsetattr(tty, TCSANOW, &term[0]) == -1) {
-		perror("failed to teardown tty");
-		return 1;
+		switch (state) {
+		case NONE:
+			if (n == 0) {
+				// escape presed
+				return 0;
+			} else if (strstr(buf, "create")) {
+				state = CREATE;
+			} else if (strstr(buf, "instances")) {
+				state = INSTANCES;
+			} else if (strstr(buf, "ssh")) {
+				state = SSH;
+			} else if (strstr(buf, "terminate")) {
+				state = TERMINATE;
+			} else {
+				fprintf(stderr, "failed to match any options in start menu\n");
+				state = NONE;
+			}
+			break;
+		case CREATE:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+			}
+			break;
+		case INSTANCES:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+			}
+			break;
+		case SSH:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+			}
+			break;
+		case TERMINATE:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+			}
+			break;
+
+		}
 	}
 
 	return 0;
