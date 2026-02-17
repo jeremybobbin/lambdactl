@@ -189,16 +189,16 @@ int menu(int *outfd, int *optionfd) {
 
 enum {
 	NONE = 0,
-	CREATE,
+	SELECT_INSTANCE_TYPE,
 	INSTANCES,
 	SSH,
 	TERMINATE,
 	SELECT_SSH_KEY,
-	SELECT_INSTANCE_TYPE,
 };
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
+	char *instance_type = NULL, *ssh_key = NULL;
 	int i, n, pid, state = NONE, status;
 
 	union {
@@ -240,13 +240,7 @@ int main(/*int argc, char *argv[]*/) {
 				}
 			}
 			break;
-		case CREATE:
-			if (n == 0) {
-				// escape presed
-				state = NONE;
-				break;
-			}
-
+		case SELECT_INSTANCE_TYPE:
 			switch ((n = fork())) {
 			case -1:
 				perror("fork");
@@ -257,7 +251,6 @@ int main(/*int argc, char *argv[]*/) {
 				perror("exec bin/instance-types");
 				exit(1);
 			}
-			state = SELECT_SSH_KEY;
 			break;
 		case INSTANCES: case SSH: case TERMINATE:
 			switch ((n = fork())) {
@@ -267,17 +260,31 @@ int main(/*int argc, char *argv[]*/) {
 			case 0:
 				dup2(optionfd, 1);
 				execl("bin/instances", "bin/instances", NULL);
-				perror("exec bin/instance");
+				perror("exec bin/instances");
 				exit(1);
 			}
 			break;
-
+		case SELECT_SSH_KEY:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/ssh-keys/list", "bin/ssh-keys/list", NULL);
+				perror("exec bin/ssh-keys/list");
+				exit(1);
+			}
+			break;
 		}
 
 
 		close(optionfd);
 		n = read(outfd, buf, sizeof(buf)-1);
 		buf[n] = '\0';
+		if (n > 0 && buf[n-1] == '\n') {
+			buf[n-1] = '\0'; // trim trailing newline
+		}
 		close(outfd);
 		kill(pid, SIGINT);
 
@@ -287,7 +294,7 @@ int main(/*int argc, char *argv[]*/) {
 				// escape presed
 				return 0;
 			} else if (strstr(buf, "create")) {
-				state = CREATE;
+				state = SELECT_INSTANCE_TYPE;
 			} else if (strstr(buf, "instances")) {
 				state = INSTANCES;
 			} else if (strstr(buf, "ssh")) {
@@ -299,13 +306,49 @@ int main(/*int argc, char *argv[]*/) {
 				state = NONE;
 			}
 			break;
+		case INSTANCES:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+			break;
+		case SSH:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+			break;
+		case TERMINATE:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+			break;
 		case SELECT_INSTANCE_TYPE:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+			instance_type = strdup(buf);
+			state = SELECT_SSH_KEY;
+			break;
+		case SELECT_SSH_KEY:
+			if (n == 0) {
+				// escape presed
+				state = SELECT_INSTANCE_TYPE;
+				break;
+			}
+			ssh_key = strdup(buf);
 			switch ((n = fork())) {
 			case -1:
 				perror("fork");
 				return 1;
 			case 0:
-				execl("bin/instance-operations/launch", "bin/instance-operations/launch", buf, NULL);
+				execl("bin/instance-operations/launch", "bin/instance-operations/launch", instance_type, buf, NULL);
 				perror("exec bin/instance-operations/launch");
 				return 1;
 			}
@@ -322,27 +365,7 @@ int main(/*int argc, char *argv[]*/) {
 				break;
 			}
 			state = INSTANCES;
-
 			break;
-		case INSTANCES:
-			if (n == 0) {
-				// escape presed
-				state = NONE;
-			}
-			break;
-		case SSH:
-			if (n == 0) {
-				// escape presed
-				state = NONE;
-			}
-			break;
-		case TERMINATE:
-			if (n == 0) {
-				// escape presed
-				state = NONE;
-			}
-			break;
-
 		}
 	}
 

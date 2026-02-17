@@ -42,9 +42,9 @@ int find(Pair *pairs, int len, char *key) {
 
 // read tsv into options array
 int read_tsv(int fd, Pair **options, int *len) {
-	int m;
-	static int i, j, k, n, off;
-	static char buf[2048]; // TODO - set to 10 & fix
+	int m = 0;
+	int i, j, k, n = 0, off;
+	char buf[4096]; // TODO - set to 10 & fix
 	char *option, *str;
 
 
@@ -53,7 +53,7 @@ int read_tsv(int fd, Pair **options, int *len) {
 		exit(1);
 	}
 
-	if ((m = read(fd, &buf[i], sizeof(buf)-i)) == -1) {
+	if ((m = read(fd, buf, sizeof(buf))) == -1) {
 		perror("read in read_tsv");
 		return -1;
 	}
@@ -128,7 +128,7 @@ int read_tsv(int fd, Pair **options, int *len) {
 // items - array of tsv
 char **stretch(Pair *items, int len) {
 	int i, j, n, m, max = 0, pad, remaining, *widths;
-	char **columns, **rows, *row, *str;
+	char **rows, *row, *str;
 
 	// for every row, count the columns, to learn the maximum number of columns required
 	for (i = 0; i < len; i++) {
@@ -141,10 +141,6 @@ char **stretch(Pair *items, int len) {
 		}
 
 		max = MAX(m, max);
-	}
-
-	if ((columns = malloc(sizeof(*columns)*max)) == NULL) {
-		return NULL;
 	}
 
 	// this is the max widths of each column
@@ -184,6 +180,7 @@ char **stretch(Pair *items, int len) {
 		pad = remaining;
 	}
 
+	// TODO - handle when row is longer than win.ws_col(width)
 	for (i = 0; i < len; i++) {
 		if ((rows[i] = malloc(sizeof(**rows)*win.ws_col)) == NULL) {
 			return NULL;
@@ -346,7 +343,7 @@ int main(/*int argc, char *argv[]*/) {
 			case 0x40 ^ '[':
 				goto out;
 			case '\r':
-				write(1, r[sel], strlen(r[sel]));
+				write(1, options[sel].key, strlen(options[sel].key));
 				write(1, "\n", 1);
 				break;
 			}
