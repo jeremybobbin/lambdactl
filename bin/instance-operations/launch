@@ -1,4 +1,4 @@
-#!/bin/sh -xe
+#!/bin/sh -e
 
 instance="${1%%/*}"
 zone="${1##*/}"
@@ -13,4 +13,5 @@ printf '{
 	"file_system_names": [],
 	"file_system_mounts": []
 }' "${instance}" "${zone}" "${key}" |
-	curl https://cloud.lambda.ai/api/v1/instance-operations/launch -s -u "$LAMBDA_API_KEY" --data-binary @-
+	curl https://cloud.lambda.ai/api/v1/instance-operations/launch -s -u "$LAMBDA_API_KEY" --data-binary @- |
+	jq -r 'select(.error)|.error.message'
