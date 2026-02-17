@@ -2,6 +2,5 @@
 curl https://cloud.lambda.ai/api/v1/ssh-keys -s -u "$LAMBDA_API_KEY" |
 	jq -r '.data[] | [
 		.id,
-		.name,
-		.public_key
+		.name
 	] | @tsv'
