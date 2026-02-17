@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
@@ -192,12 +193,13 @@ enum {
 	INSTANCES,
 	SSH,
 	TERMINATE,
+	SELECT_SSH_KEY,
 	SELECT_INSTANCE_TYPE,
 };
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	int i, n, pid, state = NONE;
+	int i, n, pid, state = NONE, status;
 
 	union {
 		char *s;
@@ -239,6 +241,12 @@ int main(/*int argc, char *argv[]*/) {
 			}
 			break;
 		case CREATE:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+
 			switch ((n = fork())) {
 			case -1:
 				perror("fork");
@@ -249,6 +257,7 @@ int main(/*int argc, char *argv[]*/) {
 				perror("exec bin/instance-types");
 				exit(1);
 			}
+			state = SELECT_SSH_KEY;
 			break;
 		case INSTANCES: case SSH: case TERMINATE:
 			switch ((n = fork())) {
@@ -290,11 +299,30 @@ int main(/*int argc, char *argv[]*/) {
 				state = NONE;
 			}
 			break;
-		case CREATE:
-			if (n == 0) {
-				// escape presed
-				state = NONE;
+		case SELECT_INSTANCE_TYPE:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				execl("bin/instance-operations/launch", "bin/instance-operations/launch", buf, NULL);
+				perror("exec bin/instance-operations/launch");
+				return 1;
 			}
+
+			for (;;) {
+				n = waitpid(pid, &status, 0);
+				if (n == -1) {
+					if (errno == EINTR) {
+						continue;
+					}
+					status = -1;
+					break;
+				}
+				break;
+			}
+			state = INSTANCES;
+
 			break;
 		case INSTANCES:
 			if (n == 0) {
