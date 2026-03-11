@@ -1,5 +1,6 @@
 .POSIX:
 
+CC=/bin/cc
 CFLAGS=-Wall -Wextra -O2 -Wpedantic -ggdb -fdiagnostics-color=always
 LDFLAGS=
 
