@@ -352,18 +352,20 @@ int main(/*int argc, char *argv[]*/) {
 		for (i = 0; i < len; i++) {
 			switch (i == sel) {
 			case 0: // default
-				fprintf(stderr, "\n\x1b[2K %s ", r[i]);
+				fprintf(stderr, "\x1b[2K %s ", r[i]);
 				break;
 			default: // reverse
 				// cursor column n
-				fprintf(stderr, "\n\x1b[2K\x1b[7m %s \x1b[0m", r[i]);
+				fprintf(stderr, "\x1b[2K\x1b[7m %s \x1b[0m", r[i]);
 				break;
 			}
+
+			fprintf(stderr, "\n", r[i]);
 		}
 
 		if (MIN(len, win.ws_row)) {
 			// cursor up n-times, cursor to column n
-			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), len);
+			fprintf(stderr, "\x1b[%dF\x1b[%dG", MIN(len, win.ws_row), 1);
 		}
 
 	}
