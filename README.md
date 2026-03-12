@@ -1,4 +1,5 @@
-# lambdactl - ineractive terminal menu for controlling lambda cloud instances
+# lambdactl
+## interactive terminal menu for controlling lambda cloud instances
 
 ### dependencies
 
