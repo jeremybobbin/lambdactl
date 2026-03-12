@@ -252,7 +252,19 @@ int main(/*int argc, char *argv[]*/) {
 				exit(1);
 			}
 			break;
-		case INSTANCES: case SSH: case TERMINATE:
+		case SSH:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/ssh/instances", "bin/ssh/instances", NULL);
+				perror("exec bin/ssh/instances");
+				exit(1);
+			}
+			break;
+		case INSTANCES: case TERMINATE:
 			switch ((n = fork())) {
 			case -1:
 				perror("fork");
@@ -319,6 +331,19 @@ int main(/*int argc, char *argv[]*/) {
 				state = NONE;
 				break;
 			}
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				fprintf(stderr, "sshing %s\n", buf);
+				execlp("ssh", "ssh", buf, NULL);
+				perror("exec ssh");
+				exit(1);
+			}
+
+			waitpid(n, &status, 0);
 			break;
 		case TERMINATE:
 			if (n == 0) {
