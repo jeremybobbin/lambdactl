@@ -6,6 +6,8 @@
 ```
 curl
 jq
+coreutils
+awk
 ```
 
 ### compile

@@ -1,6 +1,34 @@
 #!/bin/sh
+
+tmp="$(mktemp -d)"
+
+# format the remote keys
 curl https://cloud.lambda.ai/api/v1/ssh-keys -s -u "$LAMBDA_API_KEY" |
 	jq -r '.data[] | [
 		.name,
-		.name
-	] | @tsv'
+		.public_key
+	] | @tsv' |  while IFS='	' read name key; do
+
+		unset IFS # make it space-delimited
+		set $key
+
+		protocol="$1"
+		key="$2"
+
+		printf "%s-%s %s\n" "$protocol" "$key" "$name"
+	done | sort > "$tmp/remote"
+
+unset IFS
+
+# format the local keys
+find "$HOME/.ssh/" -type f | grep "\.pub$" | while read path; do
+		read protocol key name < "$path"
+		printf "%s-%s %s\n" "$protocol" "$key" "$path"
+	done | sort > "$tmp/local"
+
+
+# join so that we can see which ones we have in common
+(join "$tmp/remote" "$tmp/local"; cat "$tmp/remote") |
+	awk -vOFS='\t' 'x[$2]++ { next } { print $2, $2, $3 }'
+
+rm -rf "$tmp"
