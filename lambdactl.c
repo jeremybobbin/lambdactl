@@ -368,7 +368,7 @@ int main(/*int argc, char *argv[]*/) {
 				break;
 			}
 			ssh_key = strdup(buf);
-			switch ((n = fork())) {
+			switch ((pid = fork())) {
 			case -1:
 				perror("fork");
 				return 1;
@@ -377,6 +377,7 @@ int main(/*int argc, char *argv[]*/) {
 				perror("exec bin/instance-operations/launch");
 				return 1;
 			}
+
 
 			for (;;) {
 				n = waitpid(pid, &status, 0);
