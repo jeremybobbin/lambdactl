@@ -144,7 +144,7 @@ char **stretch(Pair *items, int len) {
 	}
 
 	// this is the max widths of each column
-	if ((widths = malloc(sizeof(*widths)*max)) == NULL) {
+	if ((widths = calloc(max, sizeof(*widths))) == NULL) {
 		return NULL;
 	}
 
