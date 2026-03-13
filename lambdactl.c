@@ -373,8 +373,8 @@ int main(/*int argc, char *argv[]*/) {
 				perror("fork");
 				return 1;
 			case 0:
-				execl("bin/instance-operations/launch", "bin/instance-operations/launch", instance_type, buf, NULL);
-				perror("exec bin/instance-operations/launch");
+				execl("bin/create/launch", "bin/create/launch", instance_type, buf, NULL);
+				perror("exec bin/create/launch");
 				return 1;
 			}
 
