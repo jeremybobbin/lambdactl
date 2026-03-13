@@ -247,8 +247,8 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/instance-types", "bin/instance-types", NULL);
-				perror("exec bin/instance-types");
+				execl("bin/create/instance-types", "bin/create/instance-types", NULL);
+				perror("exec bin/create/instance-types");
 				exit(1);
 			}
 			break;
