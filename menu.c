@@ -343,8 +343,10 @@ int main(/*int argc, char *argv[]*/) {
 			case 0x40 ^ '[':
 				goto out;
 			case '\r':
-				write(1, options[sel].key, strlen(options[sel].key));
-				write(1, "\n", 1);
+				if (options) {
+					write(1, options[sel].key, strlen(options[sel].key));
+					write(1, "\n", 1);
+				}
 				break;
 			}
 		}
