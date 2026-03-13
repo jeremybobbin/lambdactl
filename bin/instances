@@ -1,6 +1,6 @@
 #!/bin/sh
 curl https://cloud.lambda.ai/api/v1/instances -s -u "$LAMBDA_API_KEY" |
-	jq -r '.data[] | [
+	jq -r 'if (.data | length != 0) then .data[] | [
 		.id,
 		.ip,
 		.status,
@@ -8,4 +8,4 @@ curl https://cloud.lambda.ai/api/v1/instances -s -u "$LAMBDA_API_KEY" |
 		.region.description,
 		.instance_type.price_cents_per_hour/100,
 		.ssh_key_names[]
-	] | @tsv'
+	] | @tsv else "No instances\n" | stderr | empty end'

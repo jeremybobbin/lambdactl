@@ -9,7 +9,7 @@ instances=$(curl https://cloud.lambda.ai/api/v1/instance-types -s -u "$LAMBDA_AP
 		] | @tsv')
 
 if [ "$instances" = "" ]; then
-	echo "No instances"
+	echo "No instances available" 1>&2
 	exit
 fi
 
