@@ -351,6 +351,15 @@ int main(/*int argc, char *argv[]*/) {
 				state = NONE;
 				break;
 			}
+			switch ((pid = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				execl("bin/terminate", "bin/terminate", buf, NULL);
+				perror("exec bin/terminate");
+				return 1;
+			}
 			break;
 		case SELECT_INSTANCE_TYPE:
 			if (n == 0) {

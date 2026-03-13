@@ -1,0 +1,9 @@
+#!/bin/sh -e
+
+printf '{
+	"instance_ids": [
+		"%s"
+	]
+}' "$1" |
+	curl https://cloud.lambda.ai/api/v1/instance-operations/terminate -s -u "$LAMBDA_API_KEY" --data-binary @- |
+	jq -r 'select(.error)|.error.message'
