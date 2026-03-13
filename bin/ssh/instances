@@ -11,5 +11,5 @@ instances="$(curl https://cloud.lambda.ai/api/v1/instances -s -u "$LAMBDA_API_KE
 	] | @tsv')"
 
 if [ "$instances" = "" ]; then
-	echo "No instances available" 1>&2
+	echo "No instances" 1>&2
 fi
