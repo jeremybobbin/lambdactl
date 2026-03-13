@@ -283,8 +283,8 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/ssh-keys/list", "bin/ssh-keys/list", NULL);
-				perror("exec bin/ssh-keys/list");
+				execl("bin/create/list-ssh-keys", "bin/create/list-ssh-keys", NULL);
+				perror("exec bin/create/list-ssh-keys");
 				exit(1);
 			}
 			break;
