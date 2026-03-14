@@ -34,5 +34,5 @@ export LAMBDA_API_KEY="..."
 ```
 make clean &&
 	make BIN=/usr/local/bin LIB=/usr/local/lib/lambdactl &&
-	sudo make install
+	sudo make install BIN=/usr/local/bin LIB=/usr/local/lib/lambdactl
 ```
