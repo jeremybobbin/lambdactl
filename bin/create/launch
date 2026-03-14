@@ -3,15 +3,28 @@
 instance="${1%%/*}"
 zone="${1##*/}"
 key="$2"
+filesystem="$3"
 
-printf '{
-	"region_name": "%s",
-	"instance_type_name": "%s",
-	"ssh_key_names": [
-		"%s"
-	],
-	"file_system_names": [],
-	"file_system_mounts": []
-}' "${instance}" "${zone}" "${key}" |
+(
+	printf '{\n'
+
+	printf '"region_name": "%s",
+		"instance_type_name": "%s",
+		"ssh_key_names": [
+			"%s"
+		],
+		"file_system_names": [' "${instance}" "${zone}" "${key}"
+
+	if [ -n "$filesystem" ]; then
+		printf '"%s"' "$filesystem"
+	fi
+
+	printf '],\n'
+
+	printf '"file_system_mounts": []\n'
+
+	printf '}'
+
+) |
 	curl https://cloud.lambda.ai/api/v1/instance-operations/launch -s -u "$LAMBDA_API_KEY" --data-binary @- |
 	jq -r 'select(.error)|.error.message'

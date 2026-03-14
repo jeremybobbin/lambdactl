@@ -194,13 +194,14 @@ enum {
 	SSH,
 	TERMINATE,
 	SELECT_SSH_KEY,
+	SELECT_FILESYSTEM,
 	KEYS,
 	FILESYSTEMS,
 };
 
 int main(/*int argc, char *argv[]*/) {
 	char buf[4096];
-	char *instance_type = NULL, *ssh_key = NULL;
+	char *instance_type = NULL, *ssh_key = NULL, *filesystem = NULL;
 	int i, n, pid, state = NONE, status;
 
 	union {
@@ -301,6 +302,18 @@ int main(/*int argc, char *argv[]*/) {
 				dup2(optionfd, 1);
 				execl("bin/instances", "bin/instances", NULL);
 				perror("exec bin/instances");
+				exit(1);
+			}
+			break;
+		case SELECT_FILESYSTEM:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/create/list-filesystems", "bin/create/list-filesystems", NULL);
+				perror("exec bin/create/list-filesystems");
 				exit(1);
 			}
 			break;
@@ -419,16 +432,25 @@ int main(/*int argc, char *argv[]*/) {
 		case SELECT_SSH_KEY:
 			if (n == 0) {
 				// escape presed
-				state = SELECT_INSTANCE_TYPE;
+				state = NONE;
 				break;
 			}
 			ssh_key = strdup(buf);
+			state = SELECT_FILESYSTEM;
+			break;
+		case SELECT_FILESYSTEM:
+			if (n == 0) {
+				// escape presed
+				state = SELECT_SSH_KEY;
+				break;
+			}
+			filesystem = strdup(buf);
 			switch ((pid = fork())) {
 			case -1:
 				perror("fork");
 				return 1;
 			case 0:
-				execl("bin/create/launch", "bin/create/launch", instance_type, buf, NULL);
+				execl("bin/create/launch", "bin/create/launch", instance_type, ssh_key, filesystem, NULL);
 				perror("exec bin/create/launch");
 				return 1;
 			}

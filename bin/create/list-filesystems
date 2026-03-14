@@ -1,9 +1,10 @@
 #!/bin/sh -e
 
+printf '\tno filesystem\t \n'
+
 curl "https://cloud.lambda.ai/api/v1/file-systems" -s -u "$LAMBDA_API_KEY" |
 	jq -r '.data[] | [
 		.name,
 		.name,
-		.mount_point,
-		.created
+		.region.description
 	] | @tsv'
