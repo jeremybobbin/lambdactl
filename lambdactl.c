@@ -194,6 +194,8 @@ enum {
 	SSH,
 	TERMINATE,
 	SELECT_SSH_KEY,
+	KEYS,
+	FILESYSTEMS,
 };
 
 int main(/*int argc, char *argv[]*/) {
@@ -218,9 +220,11 @@ int main(/*int argc, char *argv[]*/) {
 
 	const char *items[] = {
 		"create\n",
-		"instances\n",
 		"ssh\n",
 		"terminate\n"
+		"instances\n",
+		"keys\n",
+		"filesystems\n",
 	};
 
 	int optionfd = -1, outfd = -1;
@@ -261,6 +265,30 @@ int main(/*int argc, char *argv[]*/) {
 				dup2(optionfd, 1);
 				execl("bin/ssh/instances", "bin/ssh/instances", NULL);
 				perror("exec bin/ssh/instances");
+				exit(1);
+			}
+			break;
+		case KEYS:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/keys/list", "bin/keys/list", NULL);
+				perror("exec bin/keys/list");
+				exit(1);
+			}
+			break;
+		case FILESYSTEMS:
+			switch ((n = fork())) {
+			case -1:
+				perror("fork");
+				return 1;
+			case 0:
+				dup2(optionfd, 1);
+				execl("bin/filesystems/list", "bin/filesystems/list", NULL);
+				perror("exec bin/filesystems/list");
 				exit(1);
 			}
 			break;
@@ -313,12 +341,30 @@ int main(/*int argc, char *argv[]*/) {
 				state = SSH;
 			} else if (strstr(buf, "terminate")) {
 				state = TERMINATE;
+			} else if (strstr(buf, "keys")) {
+				state = KEYS;
+			} else if (strstr(buf, "filesystems")) {
+				state = FILESYSTEMS;
 			} else {
 				fprintf(stderr, "failed to match any options in start menu\n");
 				state = NONE;
 			}
 			break;
 		case INSTANCES:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+			break;
+		case FILESYSTEMS:
+			if (n == 0) {
+				// escape presed
+				state = NONE;
+				break;
+			}
+			break;
+		case KEYS:
 			if (n == 0) {
 				// escape presed
 				state = NONE;

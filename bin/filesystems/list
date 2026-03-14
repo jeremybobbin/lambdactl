@@ -1,0 +1,7 @@
+#!/bin/sh -e
+
+curl "https://cloud.lambda.ai/api/v1/file-systems" -s -u "$LAMBDA_API_KEY" |
+	jq -r '.data[] | [
+		.name,
+		.name
+	] | @tsv'
