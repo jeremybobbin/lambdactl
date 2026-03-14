@@ -184,7 +184,7 @@ int menu(int *outfd, int *optionfd) {
 	dup2(item_pipe[0], 0);
 	dup2(out_pipe[1], 1);
 
-	return execl("./menu", "./menu", NULL);
+	return execl(LIB "/menu", LIB "/menu", NULL);
 }
 
 enum {
@@ -253,7 +253,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/create/instance-types", "bin/create/instance-types", NULL);
+				execl(LIB "/bin/create/instance-types", LIB "/bin/create/instance-types", NULL);
 				perror("exec bin/create/instance-types");
 				exit(1);
 			}
@@ -265,7 +265,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/ssh/instances", "bin/ssh/instances", NULL);
+				execl(LIB "/bin/ssh/instances", LIB "/bin/ssh/instances", NULL);
 				perror("exec bin/ssh/instances");
 				exit(1);
 			}
@@ -277,7 +277,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/keys/list", "bin/keys/list", NULL);
+				execl(LIB "/bin/keys/list", LIB "/bin/keys/list", NULL);
 				perror("exec bin/keys/list");
 				exit(1);
 			}
@@ -289,7 +289,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/filesystems/list", "bin/filesystems/list", NULL);
+				execl(LIB "/bin/filesystems/list", LIB "/bin/filesystems/list", NULL);
 				perror("exec bin/filesystems/list");
 				exit(1);
 			}
@@ -301,7 +301,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/instances", "bin/instances", NULL);
+				execl(LIB "/bin/instances", LIB "/bin/instances", NULL);
 				perror("exec bin/instances");
 				exit(1);
 			}
@@ -313,7 +313,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/create/list-filesystems", "bin/create/list-filesystems", NULL);
+				execl(LIB "/bin/create/list-filesystems", LIB "/bin/create/list-filesystems", NULL);
 				perror("exec bin/create/list-filesystems");
 				exit(1);
 			}
@@ -325,7 +325,7 @@ int main(/*int argc, char *argv[]*/) {
 				return 1;
 			case 0:
 				dup2(optionfd, 1);
-				execl("bin/create/list-ssh-keys", "bin/create/list-ssh-keys", NULL);
+				execl(LIB "/bin/create/list-ssh-keys", LIB "/bin/create/list-ssh-keys", NULL);
 				perror("exec bin/create/list-ssh-keys");
 				exit(1);
 			}
@@ -416,7 +416,7 @@ int main(/*int argc, char *argv[]*/) {
 				perror("fork");
 				return 1;
 			case 0:
-				execl("bin/terminate", "bin/terminate", buf, NULL);
+				execl(LIB "/bin/terminate", LIB "/bin/terminate", buf, NULL);
 				perror("exec bin/terminate");
 				return 1;
 			}
@@ -451,7 +451,7 @@ int main(/*int argc, char *argv[]*/) {
 				perror("fork");
 				return 1;
 			case 0:
-				execl("bin/create/launch", "bin/create/launch", instance_type, ssh_key, filesystem, NULL);
+				execl(LIB "/bin/create/launch", LIB "/bin/create/launch", instance_type, ssh_key, filesystem, NULL);
 				perror("exec bin/create/launch");
 				return 1;
 			}
