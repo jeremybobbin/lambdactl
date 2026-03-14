@@ -220,12 +220,13 @@ int main(/*int argc, char *argv[]*/) {
 	}
 
 	const char *items[] = {
-		"create\n",
-		"ssh\n",
-		"terminate\n"
-		"instances\n",
-		"keys\n",
-		"filesystems\n",
+		// todo
+		"create\tcreate\t \n",
+		"ssh\tssh\t \n",
+		"terminate\tterminate\t \n"
+		"instances\tinstances\t \n",
+		"keys\tkeys\t \n",
+		"filesystems\tfilesystems\t \n",
 	};
 
 	int optionfd = -1, outfd = -1;
