@@ -1,3 +1,0 @@
-#!/bin/sh -xe
-
-curl "https://cloud.lambda.ai/api/v1/ssh-keys/${1?no key provided}" -s -u "$LAMBDA_API_KEY" -X DELETE
